@@ -23,6 +23,7 @@ namespace LMCL {
   }
 
   let currentState: TabRuntimeState | null = null;
+  let copyFeedbackTimer: number | undefined;
 
   function mustGetElement<T extends HTMLElement>(id: string): T {
     const element = document.getElementById(id);
@@ -169,6 +170,25 @@ namespace LMCL {
     }
   }
 
+  function showCopyFeedback(): void {
+    if (copyFeedbackTimer !== undefined) {
+      window.clearTimeout(copyFeedbackTimer);
+    }
+
+    elements.copyButton.classList.remove("copy-success");
+    void elements.copyButton.offsetWidth;
+    elements.copyButton.classList.add("copy-success");
+    elements.copyButton.setAttribute("aria-label", "Transcript copied");
+    elements.copyButton.title = "Copied";
+
+    copyFeedbackTimer = window.setTimeout(() => {
+      elements.copyButton.classList.remove("copy-success");
+      elements.copyButton.setAttribute("aria-label", "Copy transcript");
+      elements.copyButton.title = elements.copyButton.disabled ? "No transcript lines to copy yet." : "Copy transcript.";
+      copyFeedbackTimer = undefined;
+    }, 900);
+  }
+
   async function copyTranscript(): Promise<void> {
     if (!currentState?.session.lines.length) {
       setError("No transcript lines to copy yet.");
@@ -185,6 +205,7 @@ namespace LMCL {
       }
 
       setError("Copied transcript");
+      showCopyFeedback();
     } catch (error) {
       setError(error instanceof Error ? error.message : "Copy failed.");
     }

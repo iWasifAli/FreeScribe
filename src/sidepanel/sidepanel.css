@@ -324,11 +324,18 @@ h2 {
 
 button.icon-button {
   display: inline-grid;
+  position: relative;
   width: 30px;
   height: 30px;
   min-height: 30px;
+  overflow: hidden;
   padding: 0;
   place-items: center;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+}
+
+button.icon-button:active:not(:disabled) {
+  transform: scale(0.94);
 }
 
 button.icon-button svg {
@@ -339,6 +346,37 @@ button.icon-button svg {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.8;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+button.icon-button::after {
+  position: absolute;
+  width: 7px;
+  height: 12px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  opacity: 0;
+  transform: translateY(8px) rotate(45deg) scale(0.8);
+  content: "";
+}
+
+button.icon-button.copy-success {
+  color: #ffffff;
+  background: var(--primary);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px var(--primary-soft);
+  animation: copy-confirm 520ms ease-out;
+}
+
+button.icon-button.copy-success svg {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.8);
+}
+
+button.icon-button.copy-success::after {
+  opacity: 1;
+  transform: translateY(-1px) rotate(45deg) scale(1);
+  transition: opacity 160ms ease, transform 180ms ease;
 }
 
 .transcript-list {
@@ -505,5 +543,23 @@ button.icon-button svg {
   *::after {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+  }
+
+  button.icon-button.copy-success {
+    animation: none;
+  }
+}
+
+@keyframes copy-confirm {
+  0% {
+    transform: scale(0.94);
+  }
+
+  45% {
+    transform: scale(1.06);
+  }
+
+  100% {
+    transform: scale(1);
   }
 }

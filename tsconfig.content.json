@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "none",
+    "outFile": "dist/content.js"
+  },
+  "files": [
+    "src/chrome.d.ts",
+    "src/shared/types.ts",
+    "src/shared/captionText.ts",
+    "src/shared/messages.ts",
+    "src/content/meetCaptionExtractor.ts",
+    "src/content/content.ts"
+  ]
+}

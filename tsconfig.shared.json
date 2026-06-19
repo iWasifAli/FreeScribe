@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "none",
+    "outFile": "test-dist/shared-test.js"
+  },
+  "files": [
+    "src/shared/types.ts",
+    "src/shared/captionText.ts",
+    "src/shared/time.ts",
+    "src/shared/slugify.ts",
+    "src/shared/transcriptReducer.ts",
+    "src/shared/exportTranscript.ts"
+  ]
+}

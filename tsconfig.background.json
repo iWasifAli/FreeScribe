@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "none",
+    "outFile": "dist/background.js"
+  },
+  "files": [
+    "src/chrome.d.ts",
+    "src/shared/types.ts",
+    "src/shared/captionText.ts",
+    "src/shared/time.ts",
+    "src/shared/slugify.ts",
+    "src/shared/transcriptReducer.ts",
+    "src/shared/exportTranscript.ts",
+    "src/shared/messages.ts",
+    "src/shared/storage.ts",
+    "src/background/background.ts"
+  ]
+}

@@ -1,0 +1,6 @@
+.codex/
+.directory
+dist/
+node_modules/
+test-dist/
+npm-debug.log*

@@ -312,3 +312,42 @@ test("ignores obvious Google Meet control and material icon text", async () => {
 
   assert.equal(next.lines.length, 0);
 });
+
+test("ignores Google Meet pre-join and device status text without a speaker", async () => {
+  const LMCL = await loadLmcl();
+  const session = baseSession();
+  const statusCandidates = [
+    "Looking for others on the call…",
+    "No one else is here",
+    "Ignat Remizov, Michael Shekwolo and Wasif Ali are in this call",
+    "Camera is starting",
+    "Move the call here without interrupting it, then stop the call on the other device",
+    "Switch the call here",
+    "error Camera might be blocked Check your camera's privacy switch and remove anything that is covering the camera lens",
+    "Camera might be blocked",
+    "Check your camera's privacy switch and remove anything that is covering the camera lens"
+  ];
+
+  const next = statusCandidates.reduce(
+    (current, text, index) => LMCL.applyCaptionCandidate(
+      current,
+      candidate({ speaker: null, text, observedAt: 1_820_000_001_000 + index }),
+      reducerOptions
+    ),
+    session
+  );
+
+  assert.equal(next.lines.length, 0);
+});
+
+test("keeps pre-join-like words when a real speaker says them", async () => {
+  const LMCL = await loadLmcl();
+  const next = LMCL.applyCaptionCandidate(
+    baseSession(),
+    candidate({ speaker: "Wasif Ali", text: "No one else is here", observedAt: 1_820_000_001_000 }),
+    reducerOptions
+  );
+
+  assert.equal(next.lines.length, 1);
+  assert.equal(next.lines[0].text, "No one else is here");
+});

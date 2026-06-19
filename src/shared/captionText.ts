@@ -38,6 +38,17 @@ namespace LMCL {
     "zoom_in"
   ]);
 
+  const PRE_JOIN_STATUS_TEXTS = new Set([
+    "camera is starting",
+    "camera might be blocked",
+    "check your cameras privacy switch and remove anything that is covering the camera lens",
+    "error camera might be blocked check your cameras privacy switch and remove anything that is covering the camera lens",
+    "looking for others on the call",
+    "move the call here without interrupting it then stop the call on the other device",
+    "no one else is here",
+    "switch the call here"
+  ]);
+
   export function normalizeText(text: string | null | undefined): string {
     return (text || "").replace(/\s+/g, " ").trim();
   }
@@ -81,9 +92,24 @@ namespace LMCL {
     return /\bis presenting\b/i.test(raw) && raw.length < 140;
   }
 
+  export function isLikelyMeetPreJoinStatusText(text: string | null | undefined): boolean {
+    const normalized = normalizeForCaptionComparison(text);
+
+    if (!normalized) {
+      return false;
+    }
+
+    if (PRE_JOIN_STATUS_TEXTS.has(normalized)) {
+      return true;
+    }
+
+    return /\b(?:is|are) in this call$/.test(normalized) && normalized.length < 180;
+  }
+
   export function shouldIgnoreCaptionText(speaker: string | null | undefined, text: string | null | undefined): boolean {
     const normalizedText = normalizeText(text);
     const normalizedSpeaker = normalizeText(speaker);
+    const hasRealSpeaker = Boolean(normalizedSpeaker) && normalizedSpeaker !== UNKNOWN_SPEAKER;
 
     if (!normalizedText) {
       return true;
@@ -98,6 +124,10 @@ namespace LMCL {
     }
 
     if (normalizedSpeaker && isMaterialIconToken(normalizedSpeaker)) {
+      return true;
+    }
+
+    if (!hasRealSpeaker && isLikelyMeetPreJoinStatusText(normalizedText)) {
       return true;
     }
 

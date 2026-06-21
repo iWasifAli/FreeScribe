@@ -41,32 +41,6 @@ namespace LMCL {
     return false;
   }
 
-  function commonPrefixWordCount(left: string, right: string): number {
-    const leftWords = normalizeForCaptionComparison(left).split(" ").filter(Boolean);
-    const rightWords = normalizeForCaptionComparison(right).split(" ").filter(Boolean);
-    const max = Math.min(leftWords.length, rightWords.length);
-    let count = 0;
-
-    while (count < max && leftWords[count] === rightWords[count]) {
-      count += 1;
-    }
-
-    return count;
-  }
-
-  function isLikelyProgressiveRewrite(previousText: string, nextText: string): boolean {
-    const previousWords = normalizeForCaptionComparison(previousText).split(" ").filter(Boolean);
-    const nextWords = normalizeForCaptionComparison(nextText).split(" ").filter(Boolean);
-    const prefixCount = commonPrefixWordCount(previousText, nextText);
-    const shorterLength = Math.min(previousWords.length, nextWords.length);
-
-    return prefixCount >= 5 && prefixCount / Math.max(1, shorterLength) >= 0.55;
-  }
-
-  function hasSameStableSource(line: TranscriptLine, candidate: CaptionCandidate): boolean {
-    return Boolean(line.sourceNodeHash && candidate.sourceNodeHash && line.sourceNodeHash === candidate.sourceNodeHash);
-  }
-
   function findRecentUnknownDuplicateIndex(lines: TranscriptLine[], text: string, observedAt: number, windowMs: number): number {
     const comparableText = normalizeForCaptionComparison(text);
 
@@ -182,8 +156,7 @@ namespace LMCL {
 
       if (
         text.startsWith(line.text) ||
-        comparableText.startsWith(comparableLineText) ||
-        (hasSameStableSource(line, candidate) && isLikelyProgressiveRewrite(line.text, text))
+        comparableText.startsWith(comparableLineText)
       ) {
         const nextLines = lines.slice();
         nextLines[index] = {

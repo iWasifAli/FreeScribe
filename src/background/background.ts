@@ -293,6 +293,25 @@ namespace LMCL {
     return { ok: false, error: { code, message } };
   }
 
+  async function restartContentCaptureAfterReload(tabId: number, updatedTab: any | null): Promise<void> {
+    await ensureStorageLoaded();
+
+    const tab = isMeetUrl(updatedTab?.url) ? updatedTab : await getTab(tabId);
+    if (!isMeetUrl(tab?.url)) {
+      await broadcastTabState(tabId);
+      return;
+    }
+
+    const session = getSession(tabId);
+    if (session.status !== "RECORDING") {
+      await broadcastTabState(tabId);
+      return;
+    }
+
+    await startContentCapture(tabId);
+    await broadcastTabState(tabId);
+  }
+
   async function startRecording(tabId: number): Promise<{ ok: true; state: TabRuntimeState } | { ok: false; error: ExtensionError }> {
     const tab = await getTab(tabId);
     if (!isMeetUrl(tab?.url)) {
@@ -616,9 +635,15 @@ namespace LMCL {
     }
   });
 
-  chrome.tabs?.onUpdated?.addListener((tabId: number) => {
+  chrome.tabs?.onUpdated?.addListener((tabId: number, changeInfo: { status?: string }, tab: any) => {
     delete contentScriptAvailableByTabId[tabKey(tabId)];
     runtimeErrorByTabId[tabKey(tabId)] = null;
+
+    if (changeInfo?.status === "complete") {
+      void restartContentCaptureAfterReload(tabId, tab);
+      return;
+    }
+
     void broadcastTabState(tabId);
   });
 

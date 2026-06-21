@@ -202,6 +202,16 @@ namespace LMCL {
     return parts;
   }
 
+  function hasLatinSpeakerCasing(text: string): boolean {
+    const words = text.split(/\s+/);
+    const latinWords = words.filter((word) => /\p{Script=Latin}/u.test(word));
+    if (latinWords.length === 0 || text.includes("@")) {
+      return true;
+    }
+
+    return latinWords.some((word) => /^[A-ZÀ-ÖØ-Þ]/u.test(word));
+  }
+
   function isPlausibleSpeakerName(value: string): boolean {
     const text = inlineText(value).replace(/:$/, "");
     if (!text || text.length > 64 || text.length < 2) {
@@ -218,7 +228,7 @@ namespace LMCL {
     }
 
     const lowered = text.toLowerCase();
-    return !["captions", "transcript", "google meet", "you", "unknown"].includes(lowered);
+    return !["captions", "transcript", "google meet", "you", "unknown"].includes(lowered) && hasLatinSpeakerCasing(text);
   }
 
   function parsePartsIntoSegments(parts: string[]): { speaker: string | null; text: string }[] {
@@ -232,7 +242,7 @@ namespace LMCL {
         continue;
       }
 
-      if (isPlausibleSpeakerName(cleanedPart)) {
+      if (isPlausibleSpeakerName(cleanedPart) && (!currentSpeaker || buffer.length > 0)) {
         if (currentSpeaker && buffer.length > 0) {
           const text = inlineText(buffer.join(" "));
           if (text && !isLikelyControlText(text)) {
@@ -306,7 +316,11 @@ namespace LMCL {
     return (hash >>> 0).toString(36);
   }
 
-  function sourceHashForElement(element: HTMLElement): string {
+  function sourceHashForSegment(
+    element: HTMLElement,
+    segment: { speaker: string | null; text: string },
+    segmentIndex: number
+  ): string {
     const rect = element.getBoundingClientRect();
     const stableParts = [
       element.tagName,
@@ -317,7 +331,10 @@ namespace LMCL {
       Math.round(rect.top / 10),
       Math.round(rect.left / 10),
       Math.round(rect.width / 10),
-      Math.round(rect.height / 10)
+      Math.round(rect.height / 10),
+      segmentIndex,
+      normalizeForCaptionComparison(segment.speaker),
+      normalizeForCaptionComparison(segment.text)
     ];
 
     return hashText(stableParts.join(":"));
@@ -363,7 +380,8 @@ namespace LMCL {
 
     for (const scoredNode of scoredNodes) {
       const parsedSegments = parseRawCaption(scoredNode.element, scoredNode.rawText);
-      for (const parsed of parsedSegments) {
+      for (let segmentIndex = 0; segmentIndex < parsedSegments.length; segmentIndex += 1) {
+        const parsed = parsedSegments[segmentIndex];
         if (!parsed.speaker && !hasCaptionSpecificAnchor(scoredNode.element)) {
           continue;
         }
@@ -385,7 +403,7 @@ namespace LMCL {
           text,
           observedAt,
           rawText: scoredNode.rawText,
-          sourceNodeHash: sourceHashForElement(scoredNode.element)
+          sourceNodeHash: sourceHashForSegment(scoredNode.element, { speaker, text }, segmentIndex)
         });
       }
     }

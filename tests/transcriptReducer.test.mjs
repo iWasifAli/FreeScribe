@@ -102,6 +102,34 @@ test("does not rewrite separate same-speaker sentences with a shared opening phr
   assert.equal(next.lines[1].text, "I think we should start with billing");
 });
 
+test("does not rewrite separate same-speaker sentences that share a source hash", async () => {
+  const LMCL = await loadLmcl();
+  const first = LMCL.applyCaptionCandidate(
+    baseSession(),
+    candidate({
+      speaker: "Wasif",
+      text: "I think we should start with auth",
+      observedAt: 1_820_000_001_000,
+      sourceNodeHash: "caption-source-1"
+    }),
+    reducerOptions
+  );
+  const next = LMCL.applyCaptionCandidate(
+    first,
+    candidate({
+      speaker: "Wasif",
+      text: "I think we should start with billing",
+      observedAt: 1_820_000_004_000,
+      sourceNodeHash: "caption-source-1"
+    }),
+    reducerOptions
+  );
+
+  assert.equal(next.lines.length, 2);
+  assert.equal(next.lines[0].text, "I think we should start with auth");
+  assert.equal(next.lines[1].text, "I think we should start with billing");
+});
+
 test("allows same-source progressive rewrites for corrected caption text", async () => {
   const LMCL = await loadLmcl();
   const first = LMCL.applyCaptionCandidate(

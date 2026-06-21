@@ -63,6 +63,10 @@ namespace LMCL {
     return prefixCount >= 5 && prefixCount / Math.max(1, shorterLength) >= 0.55;
   }
 
+  function hasSameStableSource(line: TranscriptLine, candidate: CaptionCandidate): boolean {
+    return Boolean(line.sourceNodeHash && candidate.sourceNodeHash && line.sourceNodeHash === candidate.sourceNodeHash);
+  }
+
   function findRecentUnknownDuplicateIndex(lines: TranscriptLine[], text: string, observedAt: number, windowMs: number): number {
     const comparableText = normalizeForCaptionComparison(text);
 
@@ -143,7 +147,8 @@ namespace LMCL {
           ...previousLine,
           speaker,
           updatedAt: observedAt,
-          revision: previousLine.revision + 1
+          revision: previousLine.revision + 1,
+          sourceNodeHash: candidate.sourceNodeHash || previousLine.sourceNodeHash
         };
 
         return {
@@ -178,14 +183,15 @@ namespace LMCL {
       if (
         text.startsWith(line.text) ||
         comparableText.startsWith(comparableLineText) ||
-        isLikelyProgressiveRewrite(line.text, text)
+        (hasSameStableSource(line, candidate) && isLikelyProgressiveRewrite(line.text, text))
       ) {
         const nextLines = lines.slice();
         nextLines[index] = {
           ...line,
           text,
           updatedAt: observedAt,
-          revision: line.revision + 1
+          revision: line.revision + 1,
+          sourceNodeHash: candidate.sourceNodeHash || line.sourceNodeHash
         };
 
         return {
@@ -207,7 +213,8 @@ namespace LMCL {
       text,
       startedAt: observedAt,
       updatedAt: observedAt,
-      revision: 0
+      revision: 0,
+      sourceNodeHash: candidate.sourceNodeHash
     };
 
     return {

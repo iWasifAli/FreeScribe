@@ -2,5 +2,6 @@
 .directory
 dist/
 node_modules/
+release/
 test-dist/
 npm-debug.log*

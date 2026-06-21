@@ -16,6 +16,7 @@ namespace LMCL {
     startedAt: number;
     updatedAt: number;
     revision: number;
+    sourceNodeHash?: string;
   }
 
   export interface TranscriptSession {
@@ -62,8 +63,9 @@ namespace LMCL {
   }
 
   export interface StoredState {
-    version: 1;
+    version: 2;
     sessionsByTabId: Record<string, TranscriptSession>;
+    sessionsByMeetingKey: Record<string, TranscriptSession>;
     updatedAt: number;
   }
 

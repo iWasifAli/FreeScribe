@@ -1,0 +1,32 @@
+---
+name: Bug report
+about: Report a reproducible ZolvatScribe bug
+title: "bug: "
+labels: bug
+assignees: ""
+---
+
+## Summary
+
+
+## Steps to Reproduce
+
+1.
+2.
+3.
+
+## Expected Behavior
+
+
+## Actual Behavior
+
+
+## Environment
+
+- Browser:
+- Operating system:
+- Extension version or commit:
+
+## Additional Context
+
+Do not include private meeting content, transcript data, credentials, or sensitive screenshots.

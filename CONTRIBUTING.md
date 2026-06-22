@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve ZolvatScribe.
+Thanks for helping improve FreeScribe.
 
 ## Development Setup
 

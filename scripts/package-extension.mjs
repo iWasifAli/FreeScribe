@@ -11,12 +11,34 @@ if (packageJson.version !== manifest.version) {
   throw new Error(`Version mismatch: package.json has ${packageJson.version}, manifest.json has ${manifest.version}`);
 }
 
-const artifactName = `zolvatscribe-v${packageJson.version}.zip`;
+const artifactName = `freescribe-v${packageJson.version}.zip`;
 const artifactPath = `../release/${artifactName}`;
 
 await mkdir("release", { recursive: true });
 await rm(`release/${artifactName}`, { force: true });
 
-await execFileAsync("zip", ["-r", artifactPath, "."], { cwd: "dist" });
+try {
+  await execFileAsync("zip", ["-r", artifactPath, "."], { cwd: "dist" });
+} catch (error) {
+  if (process.platform !== "win32" || error?.code !== "ENOENT") {
+    throw error;
+  }
+
+  await execFileAsync(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-Command",
+      "$ErrorActionPreference = 'Stop'; Compress-Archive -Path * -DestinationPath $env:FREESCRIBE_ARTIFACT_PATH -Force"
+    ],
+    {
+      cwd: "dist",
+      env: {
+        ...process.env,
+        FREESCRIBE_ARTIFACT_PATH: artifactPath
+      }
+    }
+  );
+}
 
 console.log(`Created release/${artifactName}`);

@@ -1,17 +1,17 @@
 {
-  "name": "zolvatscribe",
+  "name": "freescribe",
   "version": "0.1.0",
   "private": true,
   "description": "Local-only Chrome MV3 extension for saving visible Google Meet captions as a raw text transcript.",
   "license": "Apache-2.0",
   "author": "Wasif Ali",
-  "homepage": "https://github.com/iWasifAli/Zolvat-Scribe#readme",
+  "homepage": "https://github.com/iWasifAli/FreeScribe#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/iWasifAli/Zolvat-Scribe.git"
+    "url": "git+https://github.com/iWasifAli/FreeScribe.git"
   },
   "bugs": {
-    "url": "https://github.com/iWasifAli/Zolvat-Scribe/issues"
+    "url": "https://github.com/iWasifAli/FreeScribe/issues"
   },
   "keywords": [
     "chrome-extension",

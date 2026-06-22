@@ -28,7 +28,7 @@ test("formats transcript text with metadata and raw caption lines", async () => 
 
   const output = LMCL.formatTranscriptAsTxt(session, 1_820_000_130_000);
 
-  assert.match(output, /^ZolvatScribe Transcript\n/);
+  assert.match(output, /^FreeScribe Transcript\n/);
   assert.match(output, /Meeting: Weekly Engineering Sync\n/);
   assert.match(output, /Meeting URL: https:\/\/meet\.google\.com\/abc-defg-hij\n/);
   assert.match(output, /Line count: 2\n/);

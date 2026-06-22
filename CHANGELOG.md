@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to ZolvatScribe will be documented in this file.
+All notable changes to FreeScribe will be documented in this file.
 
 The project follows conventional commits for change descriptions.
 

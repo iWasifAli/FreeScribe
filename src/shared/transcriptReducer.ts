@@ -4,6 +4,8 @@ namespace LMCL {
   const LONG_TEXT_UPDATE_WINDOW_MS = 60_000;
   const LONG_TEXT_DUPLICATE_WINDOW_MS = 30 * 60_000;
   const LONG_TEXT_MIN_COMPARISON_LENGTH = 36;
+  const RELATED_CAPTION_MIN_WORDS = 10;
+  const RELATED_CAPTION_MIN_PREFIX_WORDS = 8;
 
   function defaultLineId(candidate: CaptionCandidate): string {
     const randomPart =
@@ -160,6 +162,154 @@ namespace LMCL {
     return commonPrefixWordCount(previousWords, nextWords) / previousWords.length >= 0.72;
   }
 
+  function isLikelyCaptionReplayVariant(speaker: string, previousText: string, nextText: string): boolean {
+    const previousComparableText = duplicateComparisonText(speaker, previousText);
+    const nextComparableText = duplicateComparisonText(speaker, nextText);
+    if (!previousComparableText || !nextComparableText) {
+      return false;
+    }
+
+    if (previousComparableText === nextComparableText) {
+      return isLongCaptionText(previousText) || isLongCaptionText(nextText);
+    }
+
+    if (
+      (previousComparableText.startsWith(nextComparableText) || nextComparableText.startsWith(previousComparableText)) &&
+      Math.min(previousComparableText.length, nextComparableText.length) >= LONG_TEXT_MIN_COMPARISON_LENGTH
+    ) {
+      return true;
+    }
+
+    if (isLikelyProgressiveRewrite(speaker, previousText, nextText) || isLikelyProgressiveRewrite(speaker, nextText, previousText)) {
+      return true;
+    }
+
+    const previousWords = comparisonWords(speaker, previousText);
+    const nextWords = comparisonWords(speaker, nextText);
+    const shorterWordCount = Math.min(previousWords.length, nextWords.length);
+    const longerWordCount = Math.max(previousWords.length, nextWords.length);
+    if (shorterWordCount < RELATED_CAPTION_MIN_WORDS) {
+      return false;
+    }
+
+    const sharedPrefixWords = commonPrefixWordCount(previousWords, nextWords);
+    return (
+      sharedPrefixWords >= RELATED_CAPTION_MIN_PREFIX_WORDS &&
+      sharedPrefixWords / shorterWordCount >= 0.82 &&
+      sharedPrefixWords / longerWordCount >= 0.55
+    );
+  }
+
+  function findRecentCaptionReplayVariantIndices(
+    lines: TranscriptLine[],
+    speaker: string,
+    text: string,
+    observedAt: number,
+    windowMs: number
+  ): number[] {
+    const indices: number[] = [];
+    const comparableSpeaker = normalizeForCaptionComparison(speaker);
+
+    if (!isLongCaptionText(text)) {
+      return indices;
+    }
+
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const line = lines[index];
+      if (observedAt - line.updatedAt > windowMs && observedAt - line.startedAt > windowMs) {
+        break;
+      }
+
+      if (normalizeForCaptionComparison(line.speaker) !== comparableSpeaker) {
+        continue;
+      }
+
+      if (isLikelyCaptionReplayVariant(speaker, line.text, text)) {
+        indices.push(index);
+      }
+    }
+
+    return indices.sort((left, right) => left - right);
+  }
+
+  function captionCompletenessScore(speaker: string, text: string): number {
+    const comparableText = duplicateComparisonText(speaker, text);
+    const wordCount = comparableText ? comparableText.split(" ").length : 0;
+    const hasSentenceEnding = /[.!?]["')\]]*$/.test(normalizeText(text));
+
+    return comparableText.length + wordCount * 2 + (hasSentenceEnding ? 12 : 0);
+  }
+
+  function chooseBetterCaptionText(speaker: string, currentText: string, nextText: string): string {
+    const currentComparableText = duplicateComparisonText(speaker, currentText);
+    const nextComparableText = duplicateComparisonText(speaker, nextText);
+    const currentScore = captionCompletenessScore(speaker, currentText);
+    const nextScore = captionCompletenessScore(speaker, nextText);
+
+    if (nextComparableText.startsWith(currentComparableText) && nextComparableText.length > currentComparableText.length) {
+      return nextText;
+    }
+
+    if (currentComparableText.startsWith(nextComparableText) && currentComparableText.length >= nextComparableText.length) {
+      return currentText;
+    }
+
+    return nextScore > currentScore + 8 ? nextText : currentText;
+  }
+
+  function mergeCaptionReplayVariants(
+    session: TranscriptSession,
+    indices: number[],
+    candidate: CaptionCandidate,
+    speaker: string,
+    text: string,
+    observedAt: number
+  ): TranscriptSession {
+    const lineIndexSet = new Set(indices);
+    const canonicalIndex = indices[0];
+    const canonicalLine = session.lines[canonicalIndex];
+    let bestText = chooseBetterCaptionText(speaker, canonicalLine.text, text);
+    let latestUpdatedAt = Math.max(observedAt, canonicalLine.updatedAt);
+    let sourceNodeHash = candidate.sourceNodeHash || canonicalLine.sourceNodeHash;
+
+    for (const index of indices.slice(1)) {
+      const line = session.lines[index];
+      bestText = chooseBetterCaptionText(speaker, bestText, line.text);
+      latestUpdatedAt = Math.max(latestUpdatedAt, line.updatedAt);
+      sourceNodeHash = sourceNodeHash || line.sourceNodeHash;
+    }
+
+    const textChanged = bestText !== canonicalLine.text;
+    const sourceChanged = Boolean(sourceNodeHash && sourceNodeHash !== canonicalLine.sourceNodeHash);
+    const removedDuplicates = indices.length > 1;
+
+    if (!textChanged && !sourceChanged && !removedDuplicates) {
+      return session;
+    }
+
+    const nextLines = session.lines
+      .map((line, index) => {
+        if (index !== canonicalIndex) {
+          return line;
+        }
+
+        return {
+          ...line,
+          text: bestText,
+          updatedAt: latestUpdatedAt,
+          revision: textChanged ? line.revision + 1 : line.revision,
+          sourceNodeHash
+        };
+      })
+      .filter((_line, index) => index === canonicalIndex || !lineIndexSet.has(index));
+
+    return {
+      ...session,
+      lines: nextLines,
+      lastCapturedAt: observedAt
+    };
+  }
+
   function findRecentUnknownDuplicateIndex(lines: TranscriptLine[], text: string, observedAt: number, windowMs: number): number {
     const comparableText = duplicateComparisonText(UNKNOWN_SPEAKER, text);
 
@@ -277,6 +427,11 @@ namespace LMCL {
           lastCapturedAt: observedAt
         };
       }
+    }
+
+    const replayVariantIndices = findRecentCaptionReplayVariantIndices(lines, speaker, text, observedAt, candidateDuplicateWindowMs);
+    if (replayVariantIndices.length > 0) {
+      return mergeCaptionReplayVariants(session, replayVariantIndices, candidate, speaker, text, observedAt);
     }
 
     for (let index = lines.length - 1; index >= 0; index -= 1) {

@@ -326,6 +326,90 @@ test("ignores long stale duplicates from retained Meet caption history", async (
   assert.equal(next.lines.length, 1);
 });
 
+test("ignores long replayed captions with only a noisy trailing correction", async () => {
+  const LMCL = await loadLmcl();
+  const firstText =
+    "Okay. Is this working? Oh, it is working. so what I'm going to do in this meeting session is going to test this free, scribe API and then I would report to Myself and Codex about the results. Thank you. So interested to see how it goes. Okay, take sometimes to generate the notes. I hope it doesn't crash this time. instead of";
+  const replayText =
+    "Okay. Is this working? Oh, it is working. so what I'm going to do in this meeting session is going to test this free, scribe API and then I would report to Myself and Codex about the results. Thank you. So interested to see how it goes. Okay, take sometimes to generate the notes. I hope it doesn't crash this time. It's";
+  const first = LMCL.applyCaptionCandidate(
+    baseSession(),
+    candidate({ speaker: "You", text: firstText, observedAt: 1_820_000_001_000, sourceNodeHash: "caption-source-1" }),
+    reducerOptions
+  );
+  const next = LMCL.applyCaptionCandidate(
+    first,
+    candidate({ speaker: "You", text: replayText, observedAt: 1_820_000_045_000, sourceNodeHash: "caption-source-2" }),
+    reducerOptions
+  );
+
+  assert.equal(next.lines.length, 1);
+  assert.equal(next.lines[0].text, firstText);
+});
+
+test("replaces a long replayed caption with the fuller version instead of appending", async () => {
+  const LMCL = await loadLmcl();
+  const firstText =
+    "Okay. Is this working? Oh, it is working. so what I'm going to do in this meeting session is going to test this free, scribe API and then I would report to Myself and Codex about the results. Thank you. So interested to see how it goes. Okay, take sometimes to generate the notes. I hope it doesn't crash this time. instead of";
+  const fullerText =
+    "Okay. Is this working? Oh, it is working. so what I'm going to do in this meeting session is going to test this free, scribe API and then I would report to Myself and Codex about the results. Thank you. So interested to see how it goes. Okay, take sometimes to generate the notes. I hope it doesn't crash this time. I started. Oh man, wow. Good. Really good. Okay.";
+  const first = LMCL.applyCaptionCandidate(
+    baseSession(),
+    candidate({ speaker: "You", text: firstText, observedAt: 1_820_000_001_000, sourceNodeHash: "caption-source-1" }),
+    reducerOptions
+  );
+  const next = LMCL.applyCaptionCandidate(
+    first,
+    candidate({ speaker: "You", text: fullerText, observedAt: 1_820_000_055_000, sourceNodeHash: "caption-source-3" }),
+    reducerOptions
+  );
+
+  assert.equal(next.lines.length, 1);
+  assert.equal(next.lines[0].text, fullerText);
+  assert.equal(next.lines[0].revision, 1);
+});
+
+test("collapses already-appended long caption replay variants into one line", async () => {
+  const LMCL = await loadLmcl();
+  const firstText =
+    "Okay. Is this working? Oh, it is working. so what I'm going to do in this meeting session is going to test this free, scribe API and then I would report to Myself and Codex about the results. Thank you. So interested to see how it goes. Okay, take sometimes to generate the notes. I hope it doesn't crash this time. instead of";
+  const replayText =
+    "Okay. Is this working? Oh, it is working. so what I'm going to do in this meeting session is going to test this free, scribe API and then I would report to Myself and Codex about the results. Thank you. So interested to see how it goes. Okay, take sometimes to generate the notes. I hope it doesn't crash this time. It's";
+  const fullerText =
+    "Okay. Is this working? Oh, it is working. so what I'm going to do in this meeting session is going to test this free, scribe API and then I would report to Myself and Codex about the results. Thank you. So interested to see how it goes. Okay, take sometimes to generate the notes. I hope it doesn't crash this time. I started. Oh man, wow. Good. Really good. Okay.";
+  const session = baseSession({
+    lines: [
+      {
+        id: "line-1",
+        speaker: "You",
+        text: firstText,
+        startedAt: 1_820_000_001_000,
+        updatedAt: 1_820_000_001_000,
+        revision: 0,
+        sourceNodeHash: "caption-source-1"
+      },
+      {
+        id: "line-2",
+        speaker: "You",
+        text: replayText,
+        startedAt: 1_820_000_045_000,
+        updatedAt: 1_820_000_045_000,
+        revision: 0,
+        sourceNodeHash: "caption-source-2"
+      }
+    ]
+  });
+  const next = LMCL.applyCaptionCandidate(
+    session,
+    candidate({ speaker: "You", text: fullerText, observedAt: 1_820_000_055_000, sourceNodeHash: "caption-source-3" }),
+    reducerOptions
+  );
+
+  assert.equal(next.lines.length, 1);
+  assert.equal(next.lines[0].id, "line-1");
+  assert.equal(next.lines[0].text, fullerText);
+});
+
 test("replaces noisy unknown self-speaker duplicates with the cleaner text", async () => {
   const LMCL = await loadLmcl();
   const first = LMCL.applyCaptionCandidate(

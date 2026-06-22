@@ -552,7 +552,7 @@ namespace LMCL {
       elements.aiStatusText.textContent = "AI disabled for this build.";
     } else if (!state.ai.configured) {
       elements.generateAiNotesButton.textContent = "Add Gemini key";
-      elements.generateAiNotesButton.title = "Set GEMINI_API_KEY in .env, rebuild, and reload the extension.";
+      elements.generateAiNotesButton.title = "Set FREESCRIBE_GEMINI_API_KEY in .env, rebuild, and reload the extension.";
       elements.aiStatusText.textContent = "Gemini key missing in this build.";
     } else if (!hasLines) {
       elements.generateAiNotesButton.textContent = "Generate notes";

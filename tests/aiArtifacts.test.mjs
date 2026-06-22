@@ -155,3 +155,89 @@ test("formats generated AI artifacts as Markdown", async () => {
   assert.match(markdown, /### Decisions\n- Ship after QA sign-off/);
   assert.match(markdown, /### Risks\n- No risks identified\./);
 });
+
+test("builds Gemini generateContent payload with JSON mode fields", async () => {
+  const LMCL = await loadLmcl();
+  const session = artifactSession({
+    meetingUrl: "https://meet.google.com/private-code"
+  });
+  const payload = LMCL.buildGeminiGenerateContentRequest(session);
+  const serialized = JSON.stringify(payload);
+
+  assert.equal(payload.generationConfig.responseMimeType, "application/json");
+  assert.equal(Boolean(payload.generationConfig.responseSchema), true);
+  assert.equal("responseFormat" in payload.generationConfig, false);
+  assert.equal(serialized.includes("responseMimeType"), true);
+  assert.equal(serialized.includes("https://meet.google.com/private-code"), false);
+});
+
+test("uses Gemini-compatible nullable schema fields", async () => {
+  const LMCL = await loadLmcl();
+  const actionProperties = LMCL.MEETING_ARTIFACTS_SCHEMA.properties.actionItems.items.properties;
+
+  assert.equal(actionProperties.owner.type, "string");
+  assert.equal(actionProperties.owner.nullable, true);
+  assert.equal(Array.isArray(actionProperties.owner.type), false);
+  assert.equal(actionProperties.dueDate.type, "string");
+  assert.equal(actionProperties.dueDate.nullable, true);
+  assert.equal(Array.isArray(actionProperties.dueDate.type), false);
+});
+
+test("merges AI artifacts into the latest matching session without dropping new lines", async () => {
+  const LMCL = await loadLmcl();
+  const original = artifactSession();
+  const latest = {
+    ...original,
+    lines: [
+      ...original.lines,
+      {
+        id: "line-3",
+        speaker: "Wasif",
+        text: "I will update the changelog.",
+        startedAt: 1_820_000_030_000,
+        updatedAt: 1_820_000_030_000,
+        revision: 0
+      }
+    ]
+  };
+  const artifacts = LMCL.sanitizeMeetingArtifacts(
+    {
+      executiveSummary: "Release is waiting on QA.",
+      actionItems: [],
+      minutesOfMeeting: {}
+    },
+    {
+      generatedAt,
+      model: "gemini-3.5-flash",
+      transcriptLineCount: original.lines.length,
+      transcriptUpdatedAt
+    }
+  );
+
+  const merged = LMCL.mergeAiArtifactsIntoSession(original.sessionId, latest, artifacts);
+
+  assert.equal(merged.lines.length, 3);
+  assert.equal(merged.aiArtifacts.executiveSummary, "Release is waiting on QA.");
+  assert.equal(LMCL.hasCurrentAiArtifacts(merged), false);
+});
+
+test("rejects AI artifact merge when the transcript session changed", async () => {
+  const LMCL = await loadLmcl();
+  const original = artifactSession();
+  const latest = artifactSession({ sessionId: "new-session" });
+  const artifacts = LMCL.sanitizeMeetingArtifacts(
+    {
+      executiveSummary: "Release is waiting on QA.",
+      actionItems: [],
+      minutesOfMeeting: {}
+    },
+    {
+      generatedAt,
+      model: "gemini-3.5-flash",
+      transcriptLineCount: original.lines.length,
+      transcriptUpdatedAt
+    }
+  );
+
+  assert.equal(LMCL.mergeAiArtifactsIntoSession(original.sessionId, latest, artifacts), null);
+});

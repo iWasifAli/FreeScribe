@@ -32,7 +32,7 @@ Transcript state is stored in `chrome.storage.local` and may persist across brow
 
 A transcript file is written only when the user clicks **Save transcript**. If AI is disabled or no Gemini key is configured, the extension does not send transcript content to Google APIs, third-party APIs, AI services, or any other remote service.
 
-When `FREESCRIBE_AI_ENABLED=true` and `GEMINI_API_KEY` is present at build time, clicking **Generate notes** sends the current transcript text to the Gemini API to generate an executive summary, action items, and MoM. Generated notes are stored locally with the transcript session. The API key is injected into the unpacked `dist` extension for local use, so do not publish a build containing a personal key.
+When `FREESCRIBE_AI_ENABLED=true` and `FREESCRIBE_GEMINI_API_KEY` is present at build time, clicking **Generate notes** sends the current transcript, speaker names, transcript timestamps, meeting title, and meeting start/end metadata to the Gemini API to generate an executive summary, action items, and MoM. The Google Meet URL is not sent to Gemini. Generated notes are stored locally with the transcript session. The API key is injected into the unpacked `dist` extension for local use, so do not publish a build containing a personal key.
 
 Requested Chrome permissions are limited to:
 
@@ -134,17 +134,17 @@ Set these values in `.env` before building:
 
 ```env
 FREESCRIBE_AI_ENABLED=true
-GEMINI_API_KEY=your-gemini-api-key
+FREESCRIBE_GEMINI_API_KEY=your-gemini-api-key
 GEMINI_MODEL=gemini-3.5-flash
 ```
 
-To build FreeScribe without AI, leave `GEMINI_API_KEY` empty or set:
+To build FreeScribe without AI, leave `FREESCRIBE_AI_ENABLED=false` from `.env.example`, omit `.env`, or set:
 
 ```env
 FREESCRIBE_AI_ENABLED=false
 ```
 
-No-key or disabled builds keep transcript capture/export working and do not add the Gemini host permission to `dist/manifest.json`.
+No-key or disabled builds keep transcript capture/export working and do not add the Gemini host permission to `dist/manifest.json`. A generic `GEMINI_API_KEY` from your shell is intentionally ignored; FreeScribe only reads `FREESCRIBE_GEMINI_API_KEY` when AI is explicitly enabled.
 
 Run the full build:
 
@@ -242,7 +242,7 @@ Manual QA is still important because the most integration-sensitive behavior dep
 13. Click **Stop** and confirm the transcript remains visible.
 14. Click **Save transcript** and inspect the downloaded file.
 15. With no Gemini key configured, confirm the AI notes panel is disabled and transcript controls still work.
-16. With `GEMINI_API_KEY` configured and the extension rebuilt, click **Generate notes** and confirm summary, actions, and MoM render.
+16. With `FREESCRIBE_GEMINI_API_KEY` configured and the extension rebuilt, click **Generate notes** and confirm summary, actions, and MoM render.
 17. Copy and save generated AI notes, then inspect the Markdown output.
 18. Refresh the Meet tab and confirm the extension handles reconnecting without crashing.
 19. Reload the extension and confirm autosaved state restores where practical.
@@ -276,7 +276,7 @@ localStorage.setItem("lmclDebug", "1")
 - Speaker names depend on what Google Meet exposes in the caption UI.
 - Progressive captions are deduplicated heuristically, so imperfect transcript lines are possible.
 - The extension does not capture Google Meet chat messages.
-- Gemini notes require a local build with `GEMINI_API_KEY` and `FREESCRIBE_AI_ENABLED=true`.
+- Gemini notes require a local build with `FREESCRIBE_GEMINI_API_KEY` and `FREESCRIBE_AI_ENABLED=true`.
 - Direct-extension Gemini builds embed the API key in `dist/background.js`; use a backend proxy before distributing keyed builds publicly.
 - AI-generated notes can be incomplete or inaccurate and should be reviewed against the transcript.
 - The extension does not provide participant consent flows, legal notices, compliance controls, or retention policy enforcement.

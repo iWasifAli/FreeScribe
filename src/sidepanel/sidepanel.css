@@ -514,11 +514,19 @@ button.icon-button.copy-success::after {
   width: 100%;
 }
 
+.ai-disclosure,
 .ai-status-text,
 .ai-generated-meta {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
+}
+
+.ai-disclosure {
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-subtle);
 }
 
 .ai-generated-meta {

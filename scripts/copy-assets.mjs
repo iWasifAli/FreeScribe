@@ -1,7 +1,6 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { readBuildEnv } from "./env-utils.mjs";
-
-const GEMINI_HOST_PERMISSION = "https://generativelanguage.googleapis.com/*";
+import { buildExtensionManifest } from "./manifest-utils.mjs";
 
 await mkdir("dist", { recursive: true });
 await mkdir("dist/icons", { recursive: true });
@@ -9,16 +8,7 @@ await mkdir("dist/icons", { recursive: true });
 async function writeManifest() {
   const config = await readBuildEnv();
   const manifest = JSON.parse(await readFile("manifest.json", "utf8"));
-  const hostPermissions = Array.isArray(manifest.host_permissions)
-    ? manifest.host_permissions.filter((permission) => permission !== GEMINI_HOST_PERMISSION)
-    : [];
-
-  if (config.geminiConfigured) {
-    hostPermissions.push(GEMINI_HOST_PERMISSION);
-  }
-
-  manifest.host_permissions = hostPermissions;
-  await writeFile("dist/manifest.json", `${JSON.stringify(manifest, null, 2)}\n`);
+  await writeFile("dist/manifest.json", `${JSON.stringify(buildExtensionManifest(manifest, config), null, 2)}\n`);
 }
 
 await Promise.all([

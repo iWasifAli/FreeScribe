@@ -142,6 +142,21 @@ namespace LMCL {
     );
   }
 
+  export function mergeAiArtifactsIntoSession(
+    sourceSessionId: string,
+    latestSession: TranscriptSession,
+    artifacts: AiMeetingArtifacts
+  ): TranscriptSession | null {
+    if (latestSession.sessionId !== sourceSessionId) {
+      return null;
+    }
+
+    return {
+      ...latestSession,
+      aiArtifacts: artifacts
+    };
+  }
+
   export function sanitizeMeetingArtifacts(
     value: unknown,
     metadata: {
@@ -194,7 +209,6 @@ namespace LMCL {
       "",
       "Meeting metadata:",
       `Title: ${normalizeText(session.meetingTitle) || "Unknown"}`,
-      `URL: ${normalizeText(session.meetingUrl) || "Unknown"}`,
       `Started: ${formatLocalDateTime(session.startedAt)}`,
       `Ended: ${session.endedAt ? formatLocalDateTime(session.endedAt) : "Still recording or not stopped"}`,
       `Transcript lines: ${session.lines.length}`,
@@ -203,6 +217,31 @@ namespace LMCL {
       "Transcript:",
       safeTranscript || "(No transcript lines captured.)"
     ].join("\n");
+  }
+
+  export function buildGeminiGenerateContentRequest(session: TranscriptSession): Record<string, unknown> {
+    return {
+      system_instruction: {
+        parts: [
+          {
+            text: [
+              "You are FreeScribe's meeting-notes assistant.",
+              "Return factual JSON only. Never invent details missing from the transcript."
+            ].join(" ")
+          }
+        ]
+      },
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: buildMeetingArtifactsPrompt(session) }]
+        }
+      ],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: MEETING_ARTIFACTS_SCHEMA
+      }
+    };
   }
 
   function markdownList(items: string[], emptyText: string): string[] {

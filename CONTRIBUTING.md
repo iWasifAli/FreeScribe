@@ -18,7 +18,7 @@ Gemini meeting notes are optional. For the default no-key contributor flow, do n
 FREESCRIBE_AI_ENABLED=false
 ```
 
-To test Gemini locally, copy `.env.example` to `.env`, set `FREESCRIBE_AI_ENABLED=true`, add `GEMINI_API_KEY`, then run `npm run build`. Do not commit `.env`, keyed `dist` output, release ZIPs, logs, or screenshots that expose an API key.
+To test Gemini locally, copy `.env.example` to `.env`, set `FREESCRIBE_AI_ENABLED=true`, add `FREESCRIBE_GEMINI_API_KEY`, then run `npm run build`. Do not commit `.env`, keyed `dist` output, release ZIPs, logs, or screenshots that expose an API key.
 
 ## Pull Request Expectations
 

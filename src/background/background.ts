@@ -30,14 +30,13 @@ namespace LMCL {
     return value === placeholder ? "" : value.trim();
   }
 
-  function isDisabledEnvValue(value: string): boolean {
-    const normalized = value.trim().toLowerCase();
-    return normalized === "0" || normalized === "false" || normalized === "off" || normalized === "no";
+  function isEnabledEnvValue(value: string): boolean {
+    return value.trim().toLowerCase() === "true";
   }
 
   function getAiConfig(): Omit<AiRuntimeState, "generationStatus"> & { apiKey: string } {
     const enabledValue = readInjectedValue(INJECTED_AI_ENABLED, AI_ENABLED_PLACEHOLDER);
-    const enabled = enabledValue ? !isDisabledEnvValue(enabledValue) : true;
+    const enabled = isEnabledEnvValue(enabledValue);
     const apiKey = readInjectedValue(INJECTED_GEMINI_API_KEY, GEMINI_API_KEY_PLACEHOLDER);
     const model = readInjectedValue(INJECTED_GEMINI_MODEL, GEMINI_MODEL_PLACEHOLDER) || "gemini-3.5-flash";
     const configured = enabled && Boolean(apiKey);
@@ -553,28 +552,7 @@ namespace LMCL {
           "Content-Type": "application/json",
           "x-goog-api-key": config.apiKey
         },
-        body: JSON.stringify({
-          system_instruction: {
-            parts: [
-              {
-                text: [
-                  "You are FreeScribe's meeting-notes assistant.",
-                  "Return factual JSON only. Never invent details missing from the transcript."
-                ].join(" ")
-              }
-            ]
-          },
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: buildMeetingArtifactsPrompt(session) }]
-            }
-          ],
-          generationConfig: {
-            responseMimeType: "application/json",
-            responseSchema: MEETING_ARTIFACTS_SCHEMA
-          }
-        }),
+        body: JSON.stringify(buildGeminiGenerateContentRequest(session)),
         signal: controller.signal
       });
 
@@ -606,19 +584,20 @@ namespace LMCL {
   ): Promise<{ ok: true; state: TabRuntimeState } | { ok: false; error: ExtensionError }> {
     const tab = await getTab(tabId);
     const session = getSession(tabId);
+    const sourceSessionId = session.sessionId;
     const config = getAiConfig();
 
     if (!config.enabled) {
       return errorResponse(
         "AI_DISABLED",
-        "AI meeting notes are disabled for this build. Set FREESCRIBE_AI_ENABLED=true and GEMINI_API_KEY in .env, then rebuild."
+        "AI meeting notes are disabled for this build. Set FREESCRIBE_AI_ENABLED=true and FREESCRIBE_GEMINI_API_KEY in .env, then rebuild."
       );
     }
 
     if (!config.configured) {
       return errorResponse(
         "GEMINI_API_KEY_MISSING",
-        "Missing Gemini API key. Set GEMINI_API_KEY in .env, then run npm run build and reload the extension."
+        "Missing Gemini API key. Set FREESCRIBE_GEMINI_API_KEY in .env, then run npm run build and reload the extension."
       );
     }
 
@@ -635,10 +614,14 @@ namespace LMCL {
 
     try {
       const artifacts = await requestGeminiArtifacts(session, config);
-      const nextSession: TranscriptSession = {
-        ...session,
-        aiArtifacts: artifacts
-      };
+      const latestSession = getSession(tabId);
+      const nextSession = mergeAiArtifactsIntoSession(sourceSessionId, latestSession, artifacts);
+      if (!nextSession) {
+        return errorResponse(
+          "AI_SESSION_CHANGED",
+          "The transcript session changed while AI notes were being generated. Please generate notes again."
+        );
+      }
 
       setSession(tabId, nextSession);
       await flushAutosave();

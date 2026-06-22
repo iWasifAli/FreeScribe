@@ -33,6 +33,6 @@ General feature requests and non-sensitive bugs should use GitHub issues.
 
 ## Gemini API Key Handling
 
-Gemini meeting notes are optional and intended for local source builds. If `FREESCRIBE_AI_ENABLED=false` or `GEMINI_API_KEY` is empty, transcript capture/export should keep working without Gemini network permission.
+Gemini meeting notes are optional, explicit opt-in, and intended for local source builds. If `FREESCRIBE_AI_ENABLED` is not exactly `true`, or if `FREESCRIBE_GEMINI_API_KEY` is empty, transcript capture/export should keep working without Gemini network permission.
 
 When a Gemini key is configured, the build injects it into `dist/background.js` and adds `https://generativelanguage.googleapis.com/*` to the generated extension manifest. Treat keyed `dist` folders and ZIPs as sensitive local artifacts. Do not commit, publish, upload, or attach builds that contain a personal API key.

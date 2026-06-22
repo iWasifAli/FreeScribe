@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash";
 
@@ -26,9 +27,9 @@ function parseEnvLine(line) {
   return key ? [key, value] : null;
 }
 
-async function readDotEnv() {
+async function readDotEnv(cwd) {
   try {
-    const source = await readFile(".env", "utf8");
+    const source = await readFile(join(cwd, ".env"), "utf8");
     const values = {};
     for (const line of source.split(/\r?\n/)) {
       const parsed = parseEnvLine(line);
@@ -46,17 +47,19 @@ async function readDotEnv() {
   }
 }
 
-function isDisabled(value) {
-  return ["0", "false", "off", "no"].includes(String(value || "").trim().toLowerCase());
+function isExplicitlyEnabled(value) {
+  return String(value || "").trim().toLowerCase() === "true";
 }
 
-export async function readBuildEnv() {
-  const dotEnv = await readDotEnv();
-  const getValue = (key) => process.env[key] ?? dotEnv[key] ?? "";
-  const geminiApiKey = getValue("GEMINI_API_KEY").trim();
+export async function readBuildEnv(options = {}) {
+  const env = options.env ?? process.env;
+  const cwd = options.cwd ?? process.cwd();
+  const dotEnv = await readDotEnv(cwd);
+  const getValue = (key) => env[key] ?? dotEnv[key] ?? "";
   const geminiModel = getValue("GEMINI_MODEL").trim() || DEFAULT_GEMINI_MODEL;
   const aiEnabledValue = getValue("FREESCRIBE_AI_ENABLED");
-  const aiEnabled = aiEnabledValue ? !isDisabled(aiEnabledValue) : true;
+  const aiEnabled = isExplicitlyEnabled(aiEnabledValue);
+  const geminiApiKey = aiEnabled ? getValue("FREESCRIBE_GEMINI_API_KEY").trim() : "";
 
   return {
     geminiApiKey,

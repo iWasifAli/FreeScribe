@@ -2,7 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { installCaptionDom, loadLmcl } from "./testHelpers.mjs";
 
-function captionElement(HTMLElement, speakerText, captionText) {
+function captionElement(HTMLElement, speakerText, captionText, attrs = {
+  "aria-live": "polite",
+  "aria-label": "Captions"
+}) {
   const speaker = new HTMLElement({
     text: speakerText,
     rect: { top: 640, left: 140, width: 120, height: 20, right: 260, bottom: 660 }
@@ -15,10 +18,7 @@ function captionElement(HTMLElement, speakerText, captionText) {
   return {
     caption,
     container: new HTMLElement({
-      attrs: {
-        "aria-live": "polite",
-        "aria-label": "Captions"
-      },
+      attrs,
       children: [speaker, caption],
       rect: { top: 620, left: 120, width: 640, height: 80, right: 760, bottom: 700 }
     })
@@ -51,4 +51,55 @@ test("uses parsed line content in source hashes for reused caption containers", 
   assert.equal(first.length, 1);
   assert.equal(second.length, 1);
   assert.notEqual(first[0].sourceNodeHash, second[0].sourceNodeHash);
+});
+
+test("detects visible Google Meet captions in an unlabelled lower overlay", async () => {
+  const LMCL = await loadLmcl();
+  const { document, HTMLElement } = installCaptionDom();
+  const { container } = captionElement(
+    HTMLElement,
+    "Michael Shekwolo",
+    "Okay.",
+    {}
+  );
+  document.rootElements = [container];
+
+  const candidates = LMCL.extractCaptionCandidates(document, 1_820_000_001_000);
+
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].speaker, "Michael Shekwolo");
+  assert.equal(candidates[0].text, "Okay.");
+});
+
+test("uses You as a Meet self-speaker label instead of caption text", async () => {
+  const LMCL = await loadLmcl();
+  const { document, HTMLElement } = installCaptionDom();
+  const { container } = captionElement(
+    HTMLElement,
+    "You",
+    "Did you speak to the designer regarding the design?",
+    {}
+  );
+  document.rootElements = [container];
+
+  const candidates = LMCL.extractCaptionCandidates(document, 1_820_000_001_000);
+
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].speaker, "You");
+  assert.equal(candidates[0].text, "Did you speak to the designer regarding the design?");
+});
+
+test("ignores unlabelled lower Meet tiles with only participant names", async () => {
+  const LMCL = await loadLmcl();
+  const { document, HTMLElement } = installCaptionDom();
+  document.rootElements = [
+    new HTMLElement({
+      text: "Michael Shekwolo",
+      rect: { top: 680, left: 24, width: 220, height: 24, right: 244, bottom: 704 }
+    })
+  ];
+
+  const candidates = LMCL.extractCaptionCandidates(document, 1_820_000_001_000);
+
+  assert.equal(candidates.length, 0);
 });

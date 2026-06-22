@@ -128,19 +128,80 @@ namespace LMCL {
     if (rawText.length >= 12 && rawText.length <= 260) {
       score += 8;
     }
+    if (hasLikelyUnlabelledCaptionStructure(element, rawText)) {
+      score += 28;
+    }
 
     return score;
   }
 
-  function collectCandidateNodes(root: Document): ScoredCaptionNode[] {
-    const selectors = [
+  function isInLikelyCaptionRegion(element: HTMLElement): boolean {
+    const rect = element.getBoundingClientRect();
+    const viewportHeight = Math.max(window.innerHeight || 0, 1);
+
+    return (
+      rect.top >= viewportHeight * 0.38 &&
+      rect.bottom >= viewportHeight * 0.52 &&
+      rect.height <= viewportHeight * 0.45 &&
+      rect.width >= 80
+    );
+  }
+
+  function hasLikelyUnlabelledCaptionStructure(element: HTMLElement, rawText: string): boolean {
+    if (hasCaptionSpecificAnchor(element) || rawText.length < MIN_CAPTION_TEXT_LENGTH) {
+      return false;
+    }
+
+    if (!isInLikelyCaptionRegion(element)) {
+      return false;
+    }
+
+    const parts = getVisibleLeafTextParts(element);
+    if (parts.length < 2) {
+      return false;
+    }
+
+    return parsePartsIntoSegments(parts).some((segment) => {
+      return inlineText(segment.text).length >= MIN_CAPTION_TEXT_LENGTH && !shouldIgnoreCaptionText(segment.speaker, segment.text);
+    });
+  }
+
+  function collectPotentialCaptionElements(root: Document): HTMLElement[] {
+    const anchoredSelectors = [
       "[aria-live]",
       "[role='log']",
       "[role='status']",
       "[aria-label*='caption' i]",
       "[data-testid*='caption' i]"
     ];
-    const elements = Array.from(root.querySelectorAll<HTMLElement>(selectors.join(","))).slice(-MAX_CANDIDATE_NODES);
+    const fallbackSelectors = ["div", "span", "p"];
+    const seen = new Set<HTMLElement>();
+    const elements: HTMLElement[] = [];
+    const fallbackElements: HTMLElement[] = [];
+
+    for (const element of root.querySelectorAll<HTMLElement>(anchoredSelectors.join(","))) {
+      seen.add(element);
+      elements.push(element);
+    }
+
+    if (elements.length >= MAX_CANDIDATE_NODES) {
+      return elements.slice(-MAX_CANDIDATE_NODES);
+    }
+
+    for (const element of root.querySelectorAll<HTMLElement>(fallbackSelectors.join(","))) {
+      if (seen.has(element)) {
+        continue;
+      }
+
+      seen.add(element);
+      fallbackElements.push(element);
+    }
+
+    return elements.concat(fallbackElements.slice(-(MAX_CANDIDATE_NODES - elements.length)));
+  }
+
+  function collectCandidateNodes(root: Document): ScoredCaptionNode[] {
+    const elements = collectPotentialCaptionElements(root);
     const scored: ScoredCaptionNode[] = [];
 
     for (const element of elements) {
@@ -228,7 +289,7 @@ namespace LMCL {
     }
 
     const lowered = text.toLowerCase();
-    return !["captions", "transcript", "google meet", "you", "unknown"].includes(lowered) && hasLatinSpeakerCasing(text);
+    return !["captions", "transcript", "google meet", "unknown"].includes(lowered) && hasLatinSpeakerCasing(text);
   }
 
   function parsePartsIntoSegments(parts: string[]): { speaker: string | null; text: string }[] {

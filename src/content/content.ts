@@ -1,7 +1,10 @@
 namespace LMCL {
   const EXTRACTION_DEBOUNCE_MS = 250;
   const DETECTION_HEARTBEAT_MS = 5_000;
-  const RECENT_CANDIDATE_TTL_MS = 30_000;
+  const SHORT_CANDIDATE_REPEAT_WINDOW_MS = 12_000;
+  const LONG_CANDIDATE_REPEAT_WINDOW_MS = 30 * 60_000;
+  const LONG_CANDIDATE_MIN_COMPARISON_LENGTH = 36;
+  const RECENT_CANDIDATE_TTL_MS = LONG_CANDIDATE_REPEAT_WINDOW_MS;
 
   const recentCandidateKeys = new Map<string, number>();
   let extractionTimer: ReturnType<typeof setTimeout> | null = null;
@@ -11,7 +14,18 @@ namespace LMCL {
   let captureRequested = false;
 
   function candidateKey(candidate: CaptionCandidate): string {
-    return `${candidate.speaker || ""}\n${candidate.text}`;
+    const textKey = `${normalizeForCaptionComparison(candidate.speaker || "")}\n${normalizeForCaptionComparison(candidate.text)}`;
+    return candidate.sourceNodeHash ? `${candidate.sourceNodeHash}\n${textKey}` : textKey;
+  }
+
+  function repeatWindowForCandidate(candidate: CaptionCandidate): number {
+    if (candidate.sourceNodeHash) {
+      return LONG_CANDIDATE_REPEAT_WINDOW_MS;
+    }
+
+    return normalizeForCaptionComparison(candidate.text).length >= LONG_CANDIDATE_MIN_COMPARISON_LENGTH
+      ? LONG_CANDIDATE_REPEAT_WINDOW_MS
+      : SHORT_CANDIDATE_REPEAT_WINDOW_MS;
   }
 
   function pruneRecentCandidates(now: number): void {
@@ -55,7 +69,7 @@ namespace LMCL {
     for (const candidate of candidates) {
       const key = candidateKey(candidate);
       const lastSentAt = recentCandidateKeys.get(key);
-      if (lastSentAt && observedAt - lastSentAt < 1_000) {
+      if (lastSentAt && observedAt - lastSentAt < repeatWindowForCandidate(candidate)) {
         continue;
       }
 

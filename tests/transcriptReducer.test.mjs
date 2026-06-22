@@ -36,6 +36,30 @@ test("uses Unknown Speaker when speaker is missing", async () => {
   assert.equal(next.lines[0].speaker, "Unknown Speaker");
 });
 
+test("extracts embedded You self-speaker labels from unknown candidates", async () => {
+  const LMCL = await loadLmcl();
+  const next = LMCL.applyCaptionCandidate(
+    baseSession(),
+    candidate({ speaker: null, text: "You Okay. Like there's one. Thank you." }),
+    reducerOptions
+  );
+
+  assert.equal(next.lines[0].speaker, "You");
+  assert.equal(next.lines[0].text, "Okay. Like there's one. Thank you.");
+});
+
+test("does not strip You from ordinary unknown-speech sentences", async () => {
+  const LMCL = await loadLmcl();
+  const next = LMCL.applyCaptionCandidate(
+    baseSession(),
+    candidate({ speaker: null, text: "You need to check this locally." }),
+    reducerOptions
+  );
+
+  assert.equal(next.lines[0].speaker, "Unknown Speaker");
+  assert.equal(next.lines[0].text, "You need to check this locally.");
+});
+
 test("replaces progressive caption updates from the same speaker", async () => {
   const LMCL = await loadLmcl();
   const first = LMCL.applyCaptionCandidate(
@@ -276,6 +300,157 @@ test("ignores exact duplicates seen recently", async () => {
   const next = LMCL.applyCaptionCandidate(
     first,
     candidate({ speaker: "Wasif", text: "Ship it.", observedAt: 1_820_000_020_000 }),
+    reducerOptions
+  );
+
+  assert.equal(next, first);
+  assert.equal(next.lines.length, 1);
+});
+
+test("ignores long stale duplicates from retained Meet caption history", async () => {
+  const LMCL = await loadLmcl();
+  const longCaption =
+    "I got a call from Sharia and he is saying he is on the way to his house because of the weather. There is a electricity shortage in his office.";
+  const first = LMCL.applyCaptionCandidate(
+    baseSession(),
+    candidate({ speaker: "Muaviya Imran", text: longCaption, observedAt: 1_820_000_001_000 }),
+    reducerOptions
+  );
+  const next = LMCL.applyCaptionCandidate(
+    first,
+    candidate({ speaker: "Muaviya Imran", text: longCaption, observedAt: 1_820_000_181_000 }),
+    reducerOptions
+  );
+
+  assert.equal(next, first);
+  assert.equal(next.lines.length, 1);
+});
+
+test("replaces noisy unknown self-speaker duplicates with the cleaner text", async () => {
+  const LMCL = await loadLmcl();
+  const first = LMCL.applyCaptionCandidate(
+    baseSession(),
+    candidate({
+      speaker: null,
+      text: "You Did you speak to the designer regarding the design?",
+      observedAt: 1_820_000_001_000
+    }),
+    reducerOptions
+  );
+  const next = LMCL.applyCaptionCandidate(
+    first,
+    candidate({
+      speaker: null,
+      text: "Did you speak to the designer regarding the design?",
+      observedAt: 1_820_000_002_000
+    }),
+    reducerOptions
+  );
+
+  assert.equal(next.lines.length, 1);
+  assert.equal(next.lines[0].speaker, "You");
+  assert.equal(next.lines[0].text, "Did you speak to the designer regarding the design?");
+  assert.equal(next.lines[0].revision, 0);
+});
+
+test("updates long progressive captions beyond the short live-caption window", async () => {
+  const LMCL = await loadLmcl();
+  const first = LMCL.applyCaptionCandidate(
+    baseSession(),
+    candidate({
+      speaker: "Michael Shekwolo",
+      text: "and then, And I'm just doing some final. Checks. So basically, This this way, this is the PR for EMI front and there's a PR for transactions.",
+      observedAt: 1_820_000_001_000
+    }),
+    reducerOptions
+  );
+  const next = LMCL.applyCaptionCandidate(
+    first,
+    candidate({
+      speaker: "Michael Shekwolo",
+      text: "and then, And I'm just doing some final. Checks. So basically, This this way, this is the PR for EMI front and there's a PR for transactions. There's still some conflicts, but I'm still going to fix them.",
+      observedAt: 1_820_000_041_000
+    }),
+    reducerOptions
+  );
+
+  assert.equal(next.lines.length, 1);
+  assert.equal(next.lines[0].revision, 1);
+  assert.match(next.lines[0].text, /conflicts/);
+});
+
+test("replaces fuzzy progressive rewrites when Meet changes the trailing word", async () => {
+  const LMCL = await loadLmcl();
+  const first = LMCL.applyCaptionCandidate(
+    baseSession(),
+    candidate({
+      speaker: "Michael Shekwolo",
+      text: "Okay, so Basically. I had done my part. with the whole merchants everything, but The made some new changes in the design. For the mu.",
+      observedAt: 1_820_000_001_000
+    }),
+    reducerOptions
+  );
+  const next = LMCL.applyCaptionCandidate(
+    first,
+    candidate({
+      speaker: "Michael Shekwolo",
+      text: "Okay, so Basically. I had done my part. with the whole merchants everything, but The made some new changes in the design. For the merchants onboarding flow so that is what I've lasted a walking on. This morning.",
+      observedAt: 1_820_000_006_000
+    }),
+    reducerOptions
+  );
+
+  assert.equal(next.lines.length, 1);
+  assert.equal(next.lines[0].revision, 1);
+  assert.match(next.lines[0].text, /onboarding flow/);
+});
+
+test("keeps repeated short acknowledgements after the duplicate window", async () => {
+  const LMCL = await loadLmcl();
+  const first = LMCL.applyCaptionCandidate(
+    baseSession(),
+    candidate({
+      speaker: "Muaviya Imran",
+      text: "Okay.",
+      observedAt: 1_820_000_001_000,
+      sourceNodeHash: "caption-source-1"
+    }),
+    reducerOptions
+  );
+  const next = LMCL.applyCaptionCandidate(
+    first,
+    candidate({
+      speaker: "Muaviya Imran",
+      text: "Okay.",
+      observedAt: 1_820_000_061_000,
+      sourceNodeHash: "caption-source-2"
+    }),
+    reducerOptions
+  );
+
+  assert.equal(next.lines.length, 2);
+});
+
+test("ignores same-source short captions retained in the DOM after speakers go quiet", async () => {
+  const LMCL = await loadLmcl();
+  const first = LMCL.applyCaptionCandidate(
+    baseSession(),
+    candidate({
+      speaker: "Muaviya Imran",
+      text: "Okay.",
+      observedAt: 1_820_000_001_000,
+      sourceNodeHash: "caption-source-1"
+    }),
+    reducerOptions
+  );
+  const next = LMCL.applyCaptionCandidate(
+    first,
+    candidate({
+      speaker: "Muaviya Imran",
+      text: "Okay.",
+      observedAt: 1_820_000_061_000,
+      sourceNodeHash: "caption-source-1"
+    }),
     reducerOptions
   );
 

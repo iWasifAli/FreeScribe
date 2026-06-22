@@ -18,7 +18,7 @@
             </svg>
           </div>
           <div>
-            <h1 id="productName">FreeScribe <span class="flag-emoji" role="img" aria-label="Pakistan flag">🇵🇰</span></h1>
+            <h1 id="productName">FreeScribe</h1>
             <p id="supportText" class="support-text">Checking active tab...</p>
           </div>
         </div>
@@ -38,11 +38,11 @@
 
       <section class="controls" aria-label="Recording controls">
         <button id="startButton" type="button" class="primary">Start recording</button>
-        <button id="pauseButton" type="button">Pause</button>
-        <button id="resumeButton" type="button">Resume</button>
-        <button id="stopButton" type="button">Stop</button>
+        <button id="pauseButton" type="button" class="pause-action">Pause</button>
+        <button id="resumeButton" type="button" class="secondary-primary">Resume</button>
+        <button id="stopButton" type="button" class="stop-action">Stop</button>
         <button id="clearButton" type="button" class="danger-ghost">Clear transcript</button>
-        <button id="saveButton" type="button" class="secondary-primary">Save transcript</button>
+        <button id="saveButton" type="button" class="save-action">Save transcript</button>
       </section>
 
       <section class="signal-row" aria-live="polite">
@@ -139,7 +139,7 @@
           <div id="autosaveStatus">Autosaved</div>
           <div id="lastCapturedAt">Last captured: Never</div>
         </div>
-        <p>FreeScribe is a solo-built open-source project by Wasif Ali from Pakistan 🇵🇰.</p>
+        <p>FreeScribe is a solo-built open-source project by Wasif Ali from Pakistan.</p>
         <p>Only capture captions when you have permission. Captions are stored locally on this device.</p>
         <p id="errorText" class="error-text" role="status"></p>
       </footer>

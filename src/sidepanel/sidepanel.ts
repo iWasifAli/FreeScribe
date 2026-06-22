@@ -373,10 +373,11 @@ namespace LMCL {
 
         const speaker = document.createElement("span");
         speaker.className = "transcript-speaker";
-        speaker.textContent = `${line.speaker}:`;
+        speaker.textContent = line.speaker;
 
         const text = document.createElement("span");
-        text.textContent = ` ${line.text}`;
+        text.className = "transcript-caption";
+        text.textContent = line.text;
 
         body.append(speaker, text);
         row.append(time, body);

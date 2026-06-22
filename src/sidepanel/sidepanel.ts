@@ -13,12 +13,16 @@ namespace LMCL {
     clearButton: HTMLButtonElement;
     saveButton: HTMLButtonElement;
     copyButton: HTMLButtonElement;
+    aiSection: HTMLElement;
     generateAiNotesButton: HTMLButtonElement;
     copyAiNotesButton: HTMLButtonElement;
     saveAiNotesButton: HTMLButtonElement;
+    aiProgressTitle: HTMLElement;
+    aiProgressMeta: HTMLElement;
     aiStatusText: HTMLElement;
     aiGeneratedMeta: HTMLElement;
     aiSummaryText: HTMLElement;
+    aiSummaryContent: HTMLElement;
     aiActionItemsList: HTMLOListElement;
     aiMomContent: HTMLElement;
     aiTabSummary: HTMLButtonElement;
@@ -68,12 +72,16 @@ namespace LMCL {
     clearButton: mustGetElement("clearButton"),
     saveButton: mustGetElement("saveButton"),
     copyButton: mustGetElement("copyButton"),
+    aiSection: mustGetElement("aiSection"),
     generateAiNotesButton: mustGetElement("generateAiNotesButton"),
     copyAiNotesButton: mustGetElement("copyAiNotesButton"),
     saveAiNotesButton: mustGetElement("saveAiNotesButton"),
+    aiProgressTitle: mustGetElement("aiProgressTitle"),
+    aiProgressMeta: mustGetElement("aiProgressMeta"),
     aiStatusText: mustGetElement("aiStatusText"),
     aiGeneratedMeta: mustGetElement("aiGeneratedMeta"),
     aiSummaryText: mustGetElement("aiSummaryText"),
+    aiSummaryContent: mustGetElement("aiSummaryContent"),
     aiActionItemsList: mustGetElement("aiActionItemsList"),
     aiMomContent: mustGetElement("aiMomContent"),
     aiTabSummary: mustGetElement("aiTabSummary"),
@@ -153,6 +161,32 @@ namespace LMCL {
     elements.errorText.textContent = message || "";
   }
 
+  function setButtonLabel(button: HTMLButtonElement, label: string): void {
+    const labelElement = button.querySelector<HTMLElement>(".button-label");
+    if (labelElement) {
+      labelElement.textContent = label;
+      return;
+    }
+
+    button.textContent = label;
+  }
+
+  function setVisible(element: HTMLElement, visible: boolean): void {
+    element.hidden = !visible;
+  }
+
+  function setAiStatus(message: string, visible: boolean): void {
+    elements.aiStatusText.textContent = message;
+    setVisible(elements.aiStatusText, visible);
+  }
+
+  function createIcon(iconClass: string): HTMLElement {
+    const icon = document.createElement("i");
+    icon.className = `${iconClass} fa-icon`;
+    icon.setAttribute("aria-hidden", "true");
+    return icon;
+  }
+
   async function sendMessage(type: string, payload: Record<string, unknown> = {}): Promise<any> {
     try {
       return await chrome.runtime.sendMessage({ type, payload });
@@ -197,6 +231,15 @@ namespace LMCL {
     setError(response?.error?.message || "Command failed.");
   }
 
+  async function openGoogleMeet(): Promise<void> {
+    try {
+      await chrome.tabs.create({ url: "https://meet.google.com/" });
+      setError("Opened Google Meet");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to open Google Meet.");
+    }
+  }
+
   async function downloadTranscript(text: string, filename: string): Promise<void> {
     const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -217,7 +260,7 @@ namespace LMCL {
   }
 
   function buttonState(status: RecordingStatus, supported: boolean, hasLines: boolean): void {
-    elements.startButton.disabled = !supported || status === "RECORDING" || status === "PAUSED";
+    elements.startButton.disabled = status === "RECORDING" || status === "PAUSED";
     elements.pauseButton.disabled = status !== "RECORDING";
     elements.resumeButton.disabled = status !== "PAUSED";
     elements.stopButton.disabled = status !== "RECORDING" && status !== "PAUSED";
@@ -226,16 +269,16 @@ namespace LMCL {
     elements.copyButton.disabled = !hasLines;
 
     if (!supported) {
-      elements.startButton.textContent = "Open Google Meet";
+      setButtonLabel(elements.startButton, "Open Google Meet");
       elements.startButton.title = "Open a Google Meet tab to start recording.";
     } else if (status === "RECORDING") {
-      elements.startButton.textContent = "Recording active";
+      setButtonLabel(elements.startButton, "Recording active");
       elements.startButton.title = "Recording is already active.";
     } else if (status === "PAUSED") {
-      elements.startButton.textContent = "Recording paused";
+      setButtonLabel(elements.startButton, "Recording paused");
       elements.startButton.title = "Resume or stop the current recording before starting again.";
     } else {
-      elements.startButton.textContent = "Start recording";
+      setButtonLabel(elements.startButton, "Start recording");
       elements.startButton.title = "Start saving visible Google Meet captions.";
     }
 
@@ -355,9 +398,21 @@ namespace LMCL {
     if (lines.length === 0) {
       const empty = document.createElement("li");
       empty.className = "empty-row";
-      empty.textContent = currentState?.session.status === "PAUSED"
-        ? "Paused. New captions are visible but not being saved."
+      const icon = document.createElement("span");
+      icon.className = "empty-icon";
+      icon.appendChild(createIcon("fa-regular fa-comment-dots"));
+
+      const title = document.createElement("strong");
+      title.className = "empty-title";
+      title.textContent = currentState?.session.status === "PAUSED" ? "Recording paused" : "No transcript yet";
+
+      const message = document.createElement("span");
+      message.className = "empty-message";
+      message.textContent = currentState?.session.status === "PAUSED"
+        ? "New captions are visible, but FreeScribe is not saving them until you resume."
         : "Open a Google Meet tab, turn on captions, then click Start recording.";
+
+      empty.append(icon, title, message);
       fragment.appendChild(empty);
     } else {
       for (const line of lines) {
@@ -395,22 +450,27 @@ namespace LMCL {
   function renderCaptionStatus(state: TabRuntimeState): void {
     if (!state.supported) {
       elements.captionStatus.textContent = "Not on Google Meet";
+      elements.captionStatus.className = "caption-status-value offline";
       elements.latestCandidate.textContent = "Open a supported Google Meet tab to capture captions.";
       return;
     }
 
     if (!state.canConnectToContentScript) {
       elements.captionStatus.textContent = "Refresh required";
+      elements.captionStatus.className = "caption-status-value refresh";
       elements.latestCandidate.textContent = "Refresh the Google Meet tab so the extension can reconnect.";
       return;
     }
 
     if (state.captions.detected) {
       elements.captionStatus.textContent = "Captions detected";
+      elements.captionStatus.className = "caption-status-value detected";
     } else if (state.session.status === "RECORDING" || state.session.status === "PAUSED") {
       elements.captionStatus.textContent = "Waiting for captions";
+      elements.captionStatus.className = "caption-status-value waiting";
     } else {
       elements.captionStatus.textContent = "No captions detected";
+      elements.captionStatus.className = "caption-status-value offline";
     }
 
     if (state.captions.latestCandidate) {
@@ -472,6 +532,76 @@ namespace LMCL {
     elements.aiActionItemsList.replaceChildren(fragment);
   }
 
+  function renderSummarySection(
+    fragment: DocumentFragment,
+    title: string,
+    iconClass: string,
+    items: string[],
+    emptyText: string
+  ): void {
+    const row = document.createElement("section");
+    row.className = "ai-summary-row";
+
+    const icon = document.createElement("span");
+    icon.className = "ai-summary-icon";
+    icon.appendChild(createIcon(iconClass));
+
+    const content = document.createElement("div");
+
+    const heading = document.createElement("div");
+    heading.className = "ai-summary-title";
+    heading.textContent = title;
+
+    const list = document.createElement("ul");
+    const values = items.length > 0 ? items : [emptyText];
+    for (const value of values) {
+      const item = document.createElement("li");
+      item.textContent = value;
+      if (items.length === 0) {
+        item.className = "ai-muted-item";
+      }
+      list.appendChild(item);
+    }
+
+    content.append(heading, list);
+    row.append(icon, content);
+    fragment.appendChild(row);
+  }
+
+  function renderSummarySections(minutes: AiMinutesOfMeeting): void {
+    const fragment = document.createDocumentFragment();
+    renderSummarySection(
+      fragment,
+      "Attendees",
+      "fa-solid fa-user-group",
+      minutes.attendees,
+      "No attendees identified."
+    );
+    renderSummarySection(
+      fragment,
+      "Key topics",
+      "fa-solid fa-tag",
+      minutes.keyTopics,
+      "No key topics identified."
+    );
+    renderSummarySection(
+      fragment,
+      "Decisions",
+      "fa-regular fa-circle-check",
+      minutes.decisions,
+      "No decisions identified."
+    );
+    renderSummarySection(
+      fragment,
+      "Risks",
+      "fa-solid fa-shield-halved",
+      minutes.risks,
+      "No risks identified."
+    );
+
+    elements.aiSummaryContent.replaceChildren(fragment);
+  }
+
   function appendMomSection(fragment: DocumentFragment, title: string, items: string[], emptyText: string): void {
     const heading = document.createElement("h3");
     heading.textContent = title;
@@ -514,7 +644,17 @@ namespace LMCL {
 
     if (!artifacts) {
       elements.aiGeneratedMeta.textContent = "No AI notes generated yet.";
-      elements.aiSummaryText.textContent = "No AI notes generated yet.";
+      setVisible(elements.aiGeneratedMeta, false);
+      elements.aiSummaryText.textContent = "";
+      setVisible(elements.aiSummaryText, false);
+      renderSummarySections({
+        overview: "",
+        attendees: [],
+        keyTopics: [],
+        decisions: [],
+        risks: [],
+        nextSteps: []
+      });
       renderActionItems([]);
       renderMom({
         overview: "",
@@ -528,7 +668,10 @@ namespace LMCL {
     }
 
     elements.aiGeneratedMeta.textContent = `Generated ${formatLocalDateTime(artifacts.generatedAt)} with ${artifacts.model}`;
+    setVisible(elements.aiGeneratedMeta, true);
     elements.aiSummaryText.textContent = artifacts.executiveSummary || "No executive summary generated.";
+    setVisible(elements.aiSummaryText, true);
+    renderSummarySections(artifacts.minutesOfMeeting);
     renderActionItems(artifacts.actionItems);
     renderMom(artifacts.minutesOfMeeting);
   }
@@ -540,41 +683,46 @@ namespace LMCL {
     const hasCurrentArtifacts = hasCurrentAiArtifacts(session);
     const isGenerating = state.ai.generationStatus === "generating";
     const canGenerate = hasLines && state.ai.enabled && state.ai.configured && !isGenerating;
+    const lineLabel = formatLineCount(session.lines.length);
 
     elements.generateAiNotesButton.disabled = !canGenerate;
+    elements.generateAiNotesButton.classList.toggle("is-loading", isGenerating);
+    elements.aiSection.classList.toggle("is-generating", isGenerating);
     elements.copyAiNotesButton.disabled = !hasArtifacts;
     elements.saveAiNotesButton.disabled = !hasArtifacts;
     elements.copyAiNotesButton.title = hasArtifacts ? "Copy AI meeting notes." : "Generate AI meeting notes before copying.";
     elements.saveAiNotesButton.title = hasArtifacts ? "Save AI meeting notes as Markdown." : "Generate AI meeting notes before saving.";
+    elements.aiProgressTitle.textContent = isGenerating ? "Generating meeting notes" : "Meeting notes pipeline";
+    elements.aiProgressMeta.textContent = `${lineLabel} | ${state.ai.model || "Gemini"}`;
 
     if (!state.ai.enabled) {
-      elements.generateAiNotesButton.textContent = "AI disabled";
+      setButtonLabel(elements.generateAiNotesButton, "AI disabled");
       elements.generateAiNotesButton.title = "AI meeting notes are disabled for this build.";
-      elements.aiStatusText.textContent = "AI disabled for this build.";
+      setAiStatus("AI disabled for this build.", true);
     } else if (!state.ai.configured) {
-      elements.generateAiNotesButton.textContent = "Add Gemini key";
+      setButtonLabel(elements.generateAiNotesButton, "Add Gemini key");
       elements.generateAiNotesButton.title = "Set FREESCRIBE_GEMINI_API_KEY in .env, rebuild, and reload the extension.";
-      elements.aiStatusText.textContent = "Gemini key missing in this build.";
+      setAiStatus("Gemini key missing in this build.", true);
     } else if (!hasLines) {
-      elements.generateAiNotesButton.textContent = "Generate notes";
+      setButtonLabel(elements.generateAiNotesButton, "Generate notes");
       elements.generateAiNotesButton.title = "Capture transcript lines before generating notes.";
-      elements.aiStatusText.textContent = "Capture captions first.";
+      setAiStatus("Capture captions first.", false);
     } else if (isGenerating) {
-      elements.generateAiNotesButton.textContent = "Generating...";
+      setButtonLabel(elements.generateAiNotesButton, "Generating notes");
       elements.generateAiNotesButton.title = "AI meeting notes are being generated.";
-      elements.aiStatusText.textContent = "Generating notes...";
+      setAiStatus("Preparing transcript, sending it to Gemini, then formatting summary, action items, and minutes.", true);
     } else if (hasArtifacts && !hasCurrentArtifacts) {
-      elements.generateAiNotesButton.textContent = "Regenerate notes";
+      setButtonLabel(elements.generateAiNotesButton, "Regenerate notes");
       elements.generateAiNotesButton.title = "Regenerate notes for the latest transcript.";
-      elements.aiStatusText.textContent = "Transcript changed since notes were generated.";
+      setAiStatus("Transcript changed since notes were generated.", true);
     } else if (hasArtifacts) {
-      elements.generateAiNotesButton.textContent = "Regenerate notes";
+      setButtonLabel(elements.generateAiNotesButton, "Regenerate notes");
       elements.generateAiNotesButton.title = "Generate a fresh version of the AI meeting notes.";
-      elements.aiStatusText.textContent = "AI notes ready.";
+      setAiStatus("AI notes ready.", false);
     } else {
-      elements.generateAiNotesButton.textContent = "Generate notes";
+      setButtonLabel(elements.generateAiNotesButton, "Generate notes");
       elements.generateAiNotesButton.title = "Generate summary, action items, and MoM from the transcript.";
-      elements.aiStatusText.textContent = "Ready.";
+      setAiStatus("Ready.", false);
     }
 
     elements.aiGeneratedMeta.classList.toggle("stale", hasArtifacts && !hasCurrentArtifacts);
@@ -629,6 +777,11 @@ namespace LMCL {
   }
 
   elements.startButton.addEventListener("click", () => {
+    if (!currentState?.supported) {
+      void openGoogleMeet();
+      return;
+    }
+
     if (currentState?.session.status === "STOPPED" && currentState.session.lines.length > 0) {
       const confirmed = confirm("Start a new session and replace the current transcript?");
       if (!confirmed) {

@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>FreeScribe</title>
+    <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
     <link rel="stylesheet" href="sidepanel.css">
     <script src="sidepanel.js" defer></script>
   </head>
@@ -12,53 +13,90 @@
       <header class="topbar">
         <div class="brand-lockup">
           <div class="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" role="img" focusable="false">
-              <path d="M7 4.75h10a2.25 2.25 0 0 1 2.25 2.25v6A2.25 2.25 0 0 1 17 15.25h-3.7L9.2 19.1a.7.7 0 0 1-1.18-.51v-3.34H7A2.25 2.25 0 0 1 4.75 13V7A2.25 2.25 0 0 1 7 4.75Z"/>
-              <path d="M8.25 8.25h7.5M8.25 11.25h5.5"/>
-            </svg>
+            <i class="fa-regular fa-comment-dots fa-icon"></i>
           </div>
-          <div>
+          <div class="brand-copy">
             <h1 id="productName">FreeScribe</h1>
-            <p id="supportText" class="support-text">Checking active tab...</p>
+            <p class="support-line">
+              <span class="support-dot" aria-hidden="true"></span>
+              <span id="supportText" class="support-text">Checking active tab...</span>
+            </p>
           </div>
         </div>
         <div class="topbar-actions">
           <button id="themeToggle" type="button" class="icon-button theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode">
-            <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path d="M20.25 15.3A8 8 0 0 1 8.7 3.75 8.3 8.3 0 1 0 20.25 15.3Z"></path>
-            </svg>
-            <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <circle cx="12" cy="12" r="4"></circle>
-              <path d="M12 2.75v2.1M12 19.15v2.1M4.85 4.85l1.5 1.5M17.65 17.65l1.5 1.5M2.75 12h2.1M19.15 12h2.1M4.85 19.15l1.5-1.5M17.65 6.35l1.5-1.5"></path>
-            </svg>
+            <i class="fa-regular fa-moon fa-icon theme-icon theme-icon-moon" aria-hidden="true"></i>
+            <i class="fa-regular fa-sun fa-icon theme-icon theme-icon-sun" aria-hidden="true"></i>
           </button>
           <div id="statusPill" class="status-pill idle" aria-live="polite">Idle</div>
         </div>
       </header>
 
-      <section class="controls" aria-label="Recording controls">
-        <button id="startButton" type="button" class="primary">Start recording</button>
-        <button id="pauseButton" type="button" class="pause-action">Pause</button>
-        <button id="resumeButton" type="button" class="secondary-primary">Resume</button>
-        <button id="stopButton" type="button" class="stop-action">Stop</button>
-        <button id="clearButton" type="button" class="danger-ghost">Clear transcript</button>
-        <button id="saveButton" type="button" class="save-action">Save transcript</button>
+      <div class="header-divider" aria-hidden="true"></div>
+
+      <section class="hero-action" aria-label="Meet launcher">
+        <button id="startButton" type="button" class="primary start-action">
+          <span class="button-icon" aria-hidden="true">
+            <i class="fa-solid fa-video fa-icon"></i>
+          </span>
+          <span class="button-label">Start recording</span>
+        </button>
+      </section>
+
+      <section class="controls control-card" aria-label="Recording controls">
+        <button id="pauseButton" type="button" class="pause-action">
+          <span class="button-icon" aria-hidden="true">
+            <i class="fa-solid fa-pause fa-icon"></i>
+          </span>
+          <span class="button-label">Pause</span>
+        </button>
+        <button id="resumeButton" type="button" class="secondary-primary">
+          <span class="button-icon" aria-hidden="true">
+            <i class="fa-solid fa-play fa-icon"></i>
+          </span>
+          <span class="button-label">Resume</span>
+        </button>
+        <button id="stopButton" type="button" class="stop-action">
+          <span class="button-icon" aria-hidden="true">
+            <i class="fa-solid fa-square fa-icon"></i>
+          </span>
+          <span class="button-label">Stop</span>
+        </button>
+        <button id="clearButton" type="button" class="danger-ghost">
+          <span class="button-icon" aria-hidden="true">
+            <i class="fa-regular fa-trash-can fa-icon"></i>
+          </span>
+          <span class="button-label">Clear transcript</span>
+        </button>
+        <button id="saveButton" type="button" class="save-action">
+          <span class="button-icon" aria-hidden="true">
+            <i class="fa-regular fa-floppy-disk fa-icon"></i>
+          </span>
+          <span class="button-label">Save transcript</span>
+        </button>
       </section>
 
       <section class="signal-row" aria-live="polite">
         <div>
           <span class="meta-label">Caption status</span>
-          <strong id="captionStatus">Waiting for captions</strong>
+          <strong id="captionStatus" class="caption-status-value">Waiting for captions</strong>
         </div>
         <label class="toggle-row">
-          <input id="autoScrollToggle" type="checkbox" checked>
           <span>Auto-scroll</span>
+          <input id="autoScrollToggle" type="checkbox" checked>
+          <span class="toggle-track" aria-hidden="true"></span>
         </label>
       </section>
 
       <section class="latest-section" aria-label="Latest caption candidate">
-        <span class="meta-label">Latest candidate</span>
-        <p id="latestCandidate" class="latest-text">No captions detected yet.</p>
+        <div class="latest-orb" aria-hidden="true">
+          <i class="fa-solid fa-wand-magic-sparkles fa-icon"></i>
+        </div>
+        <div class="latest-copy">
+          <span class="meta-label">Latest candidate</span>
+          <p id="latestCandidate" class="latest-text">No captions detected yet.</p>
+        </div>
+        <i class="fa-solid fa-chevron-right chevron-icon" aria-hidden="true"></i>
       </section>
 
       <section class="transcript-section" aria-label="Transcript">
@@ -67,49 +105,67 @@
           <div class="transcript-actions">
             <span id="lineCount">0 lines</span>
             <button id="copyButton" type="button" class="icon-button" aria-label="Copy transcript" title="Copy transcript" disabled>
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <rect x="8" y="8" width="10" height="10" rx="2"></rect>
-                <path d="M6 14H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1"></path>
-              </svg>
+              <i class="fa-regular fa-copy fa-icon" aria-hidden="true"></i>
             </button>
           </div>
         </div>
         <ol id="transcriptList" class="transcript-list"></ol>
       </section>
 
-      <section class="ai-section" aria-label="AI meeting notes">
+      <section id="aiSection" class="ai-section" aria-label="AI meeting notes">
         <div class="ai-header">
-          <div>
-            <span class="meta-label">Gemini</span>
+          <div class="ai-title-row">
+            <span class="ai-title-icon" aria-hidden="true">
+              <i class="fa-solid fa-wand-magic-sparkles fa-icon"></i>
+            </span>
             <h2>AI meeting notes</h2>
           </div>
           <div class="ai-note-actions">
             <button id="copyAiNotesButton" type="button" class="icon-button" aria-label="Copy AI meeting notes" title="Copy AI meeting notes" disabled>
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <rect x="8" y="8" width="10" height="10" rx="2"></rect>
-                <path d="M6 14H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1"></path>
-              </svg>
+              <i class="fa-regular fa-copy fa-icon" aria-hidden="true"></i>
             </button>
             <button id="saveAiNotesButton" type="button" class="icon-button" aria-label="Save AI meeting notes" title="Save AI meeting notes" disabled>
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path d="M12 3v10"></path>
-                <path d="m8 9 4 4 4-4"></path>
-                <path d="M5 19h14"></path>
-              </svg>
+              <i class="fa-solid fa-download fa-icon" aria-hidden="true"></i>
             </button>
           </div>
         </div>
-        <button id="generateAiNotesButton" type="button" class="ai-generate-button secondary-primary" disabled>Generate notes</button>
-        <p class="ai-disclosure">Generating notes sends this transcript to Gemini. Use it only when you are allowed to share the meeting transcript with Google&apos;s Gemini API.</p>
-        <p id="aiStatusText" class="ai-status-text" role="status">AI notes unavailable in this build.</p>
+
+        <button id="generateAiNotesButton" type="button" class="ai-generate-button secondary-primary" disabled>
+          <span class="button-icon" aria-hidden="true">
+            <i class="fa-solid fa-wand-magic-sparkles fa-icon"></i>
+          </span>
+          <span class="button-label">Generate notes</span>
+          <span class="loading-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+        </button>
+
+        <div class="ai-progress" aria-hidden="true">
+          <div class="ai-progress-top">
+            <span id="aiProgressTitle">Generating meeting notes</span>
+            <span id="aiProgressMeta">Preparing transcript</span>
+          </div>
+          <div class="ai-progress-bar"><span></span></div>
+          <div class="ai-progress-steps">
+            <span>Package transcript</span>
+            <span>Ask Gemini</span>
+            <span>Build notes</span>
+          </div>
+        </div>
+
+        <p class="ai-disclosure">
+          <i class="fa-solid fa-lock fa-icon" aria-hidden="true"></i>
+          <span>Sends transcript to Gemini for note generation.</span>
+        </p>
+        <p id="aiStatusText" class="ai-status-text" role="status" hidden>AI notes unavailable in this build.</p>
+
         <div class="ai-tabs" role="tablist" aria-label="AI notes views">
           <button id="aiTabSummary" type="button" class="ai-tab active" data-ai-tab="summary" role="tab" aria-selected="true" aria-controls="aiPanelSummary">Summary</button>
           <button id="aiTabActions" type="button" class="ai-tab" data-ai-tab="actions" role="tab" aria-selected="false" aria-controls="aiPanelActions">Actions</button>
           <button id="aiTabMom" type="button" class="ai-tab" data-ai-tab="mom" role="tab" aria-selected="false" aria-controls="aiPanelMom">MoM</button>
         </div>
-        <div id="aiGeneratedMeta" class="ai-generated-meta">No AI notes generated yet.</div>
+        <div id="aiGeneratedMeta" class="ai-generated-meta" hidden>No AI notes generated yet.</div>
         <div id="aiPanelSummary" class="ai-panel active" role="tabpanel" aria-labelledby="aiTabSummary">
-          <p id="aiSummaryText" class="ai-body-text">No AI notes generated yet.</p>
+          <p id="aiSummaryText" class="ai-body-text" hidden>No AI notes generated yet.</p>
+          <div id="aiSummaryContent" class="ai-summary-list"></div>
         </div>
         <div id="aiPanelActions" class="ai-panel" role="tabpanel" aria-labelledby="aiTabActions" hidden>
           <ol id="aiActionItemsList" class="ai-action-list"></ol>
@@ -119,7 +175,7 @@
         </div>
       </section>
 
-      <section class="meta-grid" aria-label="Meeting metadata">
+      <section class="meta-grid is-hidden" aria-label="Meeting metadata" hidden>
         <div class="meta-item">
           <span class="meta-label">Meeting</span>
           <span id="meetingTitle" class="meta-value">Unknown</span>
@@ -135,12 +191,10 @@
       </section>
 
       <footer class="footer">
-        <div class="footer-status">
-          <div id="autosaveStatus">Autosaved</div>
-          <div id="lastCapturedAt">Last captured: Never</div>
-        </div>
-        <p>FreeScribe is a solo-built open-source project by Wasif Ali from Pakistan.</p>
-        <p>Only capture captions when you have permission. Captions are stored locally on this device.</p>
+        <span>FreeScribe</span>
+        <span id="autosaveStatus" class="footer-status">Autosaved</span>
+        <span id="lastCapturedAt" class="last-captured">Last captured: Never</span>
+        <span class="footer-version">v1.0.0</span>
         <p id="errorText" class="error-text" role="status"></p>
       </footer>
     </main>

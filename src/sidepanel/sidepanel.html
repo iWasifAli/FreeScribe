@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>ZolvatScribe</title>
+    <title>FreeScribe</title>
     <link rel="stylesheet" href="sidepanel.css">
     <script src="sidepanel.js" defer></script>
   </head>
@@ -18,11 +18,22 @@
             </svg>
           </div>
           <div>
-            <h1 id="productName">ZolvatScribe</h1>
+            <h1 id="productName">FreeScribe <span class="flag-emoji" role="img" aria-label="Pakistan flag">🇵🇰</span></h1>
             <p id="supportText" class="support-text">Checking active tab...</p>
           </div>
         </div>
-        <div id="statusPill" class="status-pill idle" aria-live="polite">Idle</div>
+        <div class="topbar-actions">
+          <button id="themeToggle" type="button" class="icon-button theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode">
+            <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M20.25 15.3A8 8 0 0 1 8.7 3.75 8.3 8.3 0 1 0 20.25 15.3Z"></path>
+            </svg>
+            <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <circle cx="12" cy="12" r="4"></circle>
+              <path d="M12 2.75v2.1M12 19.15v2.1M4.85 4.85l1.5 1.5M17.65 17.65l1.5 1.5M2.75 12h2.1M19.15 12h2.1M4.85 19.15l1.5-1.5M17.65 6.35l1.5-1.5"></path>
+            </svg>
+          </button>
+          <div id="statusPill" class="status-pill idle" aria-live="polite">Idle</div>
+        </div>
       </header>
 
       <section class="controls" aria-label="Recording controls">
@@ -86,6 +97,7 @@
           <div id="autosaveStatus">Autosaved</div>
           <div id="lastCapturedAt">Last captured: Never</div>
         </div>
+        <p>FreeScribe is a solo-built open-source project by Wasif Ali from Pakistan 🇵🇰.</p>
         <p>Only capture captions when you have permission. Captions are stored locally on this device.</p>
         <p id="errorText" class="error-text" role="status"></p>
       </footer>

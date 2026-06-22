@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "ZolvatScribe",
+  "name": "FreeScribe",
   "version": "0.1.0",
   "description": "Capture visible Google Meet captions locally and export them to a text file.",
   "permissions": ["storage", "downloads", "sidePanel"],
@@ -25,7 +25,7 @@
     "default_path": "sidepanel.html"
   },
   "action": {
-    "default_title": "Open ZolvatScribe",
+    "default_title": "Open FreeScribe",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",

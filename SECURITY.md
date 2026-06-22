@@ -2,13 +2,13 @@
 
 ## Supported Versions
 
-ZolvatScribe is currently distributed as source for local installation. Security and privacy fixes are handled on the default branch until formal releases are introduced.
+FreeScribe is currently distributed as source for local installation. Security and privacy fixes are handled on the default branch until formal releases are introduced.
 
 ## Reporting a Vulnerability
 
 Do not include private meeting content, transcript data, credentials, access tokens, or personal data in public GitHub issues.
 
-Report security or privacy concerns by emailing `security@zolvat.com`. Include:
+Report security or privacy concerns through the repository's private security advisory process. Include:
 
 - A short description of the issue
 - Impact and affected workflow

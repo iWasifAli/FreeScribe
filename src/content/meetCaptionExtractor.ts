@@ -11,7 +11,7 @@ namespace LMCL {
 
   function isDebugEnabled(): boolean {
     try {
-      return localStorage.getItem("zolvatScribeDebug") === "1" || localStorage.getItem("lmclDebug") === "1";
+      return localStorage.getItem("freeScribeDebug") === "1" || localStorage.getItem("lmclDebug") === "1";
     } catch {
       return false;
     }
@@ -19,7 +19,7 @@ namespace LMCL {
 
   export function debugLog(...args: unknown[]): void {
     if (isDebugEnabled()) {
-      console.debug("[ZolvatScribe]", ...args);
+      console.debug("[FreeScribe]", ...args);
     }
   }
 

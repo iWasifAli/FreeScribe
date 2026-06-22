@@ -79,8 +79,8 @@ namespace LMCL {
     payload?: TPayload;
   }
 
-  export const PRODUCT_NAME = "ZolvatScribe";
-  export const STORAGE_KEY = "zolvatScribe.sessionsByTab";
+  export const PRODUCT_NAME = "FreeScribe";
+  export const STORAGE_KEY = "freeScribe.sessionsByTab";
   export const UNKNOWN_SPEAKER = "Unknown Speaker";
 
   export function createEmptySession(status: RecordingStatus = "IDLE"): TranscriptSession {

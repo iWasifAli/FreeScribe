@@ -2,6 +2,7 @@ namespace LMCL {
   interface Elements {
     supportText: HTMLElement;
     statusPill: HTMLElement;
+    themeToggle: HTMLButtonElement;
     meetingTitle: HTMLElement;
     meetingCode: HTMLElement;
     startedAt: HTMLElement;
@@ -24,6 +25,8 @@ namespace LMCL {
 
   let currentState: TabRuntimeState | null = null;
   let copyFeedbackTimer: number | undefined;
+  type ThemeMode = "light" | "dark";
+  const THEME_STORAGE_KEY = "freeScribe.theme";
 
   function mustGetElement<T extends HTMLElement>(id: string): T {
     const element = document.getElementById(id);
@@ -37,6 +40,7 @@ namespace LMCL {
   const elements: Elements = {
     supportText: mustGetElement("supportText"),
     statusPill: mustGetElement("statusPill"),
+    themeToggle: mustGetElement("themeToggle"),
     meetingTitle: mustGetElement("meetingTitle"),
     meetingCode: mustGetElement("meetingCode"),
     startedAt: mustGetElement("startedAt"),
@@ -56,6 +60,46 @@ namespace LMCL {
     lastCapturedAt: mustGetElement("lastCapturedAt"),
     errorText: mustGetElement("errorText")
   };
+
+  function isThemeMode(value: string | null): value is ThemeMode {
+    return value === "light" || value === "dark";
+  }
+
+  function getStoredTheme(): ThemeMode | null {
+    try {
+      const storedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+      return isThemeMode(storedTheme) ? storedTheme : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function getSystemTheme(): ThemeMode {
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  function setTheme(theme: ThemeMode): void {
+    document.documentElement.dataset.theme = theme;
+    const nextTheme = theme === "dark" ? "light" : "dark";
+    const label = `Switch to ${nextTheme} mode`;
+    elements.themeToggle.setAttribute("aria-label", label);
+    elements.themeToggle.title = label;
+  }
+
+  function saveTheme(theme: ThemeMode): void {
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // Theme persistence is optional; the active panel can still switch modes.
+    }
+  }
+
+  function toggleTheme(): void {
+    const currentTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+    const nextTheme: ThemeMode = currentTheme === "dark" ? "light" : "dark";
+    setTheme(nextTheme);
+    saveTheme(nextTheme);
+  }
 
   function statusLabel(status: RecordingStatus): string {
     switch (status) {
@@ -363,6 +407,7 @@ namespace LMCL {
   elements.stopButton.addEventListener("click", () => void runCommand(MessageType.STOP_RECORDING));
   elements.saveButton.addEventListener("click", () => void runCommand(MessageType.SAVE_TXT));
   elements.copyButton.addEventListener("click", () => void copyTranscript());
+  elements.themeToggle.addEventListener("click", toggleTheme);
 
   elements.clearButton.addEventListener("click", () => {
     if (currentState?.session.lines.length) {
@@ -396,5 +441,6 @@ namespace LMCL {
     }
   });
 
+  setTheme(getStoredTheme() || getSystemTheme());
   void refreshState();
 }

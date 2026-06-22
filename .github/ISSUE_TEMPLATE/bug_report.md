@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a reproducible ZolvatScribe bug
+about: Report a reproducible FreeScribe bug
 title: "bug: "
 labels: bug
 assignees: ""

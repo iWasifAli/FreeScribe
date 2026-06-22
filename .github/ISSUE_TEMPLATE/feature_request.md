@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an improvement for ZolvatScribe
+about: Suggest an improvement for FreeScribe
 title: "feat: "
 labels: enhancement
 assignees: ""

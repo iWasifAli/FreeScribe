@@ -26,6 +26,14 @@ export async function loadLmcl() {
   return cachedLmcl;
 }
 
+export function getLmclContext() {
+  if (!cachedContext) {
+    throw new Error("Call loadLmcl before reading the LMCL context.");
+  }
+
+  return cachedContext;
+}
+
 export function installCaptionDom(elements = []) {
   if (!cachedContext) {
     throw new Error("Call loadLmcl before installing caption DOM test globals.");
@@ -229,6 +237,7 @@ export function baseSession(overrides = {}) {
     endedAt: null,
     lastCapturedAt: null,
     lines: [],
+    aiArtifacts: null,
     ...overrides
   };
 }

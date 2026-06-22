@@ -12,6 +12,7 @@
     "src/shared/slugify.ts",
     "src/shared/transcriptReducer.ts",
     "src/shared/exportTranscript.ts",
+    "src/shared/aiArtifacts.ts",
     "src/shared/messages.ts",
     "src/shared/storage.ts",
     "src/background/background.ts"

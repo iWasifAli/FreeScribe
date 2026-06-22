@@ -19,6 +19,35 @@ namespace LMCL {
     sourceNodeHash?: string;
   }
 
+  export type AiActionPriority = "low" | "medium" | "high" | "unknown";
+
+  export interface AiActionItem {
+    task: string;
+    owner: string | null;
+    dueDate: string | null;
+    priority: AiActionPriority;
+    status: string;
+  }
+
+  export interface AiMinutesOfMeeting {
+    overview: string;
+    attendees: string[];
+    keyTopics: string[];
+    decisions: string[];
+    risks: string[];
+    nextSteps: string[];
+  }
+
+  export interface AiMeetingArtifacts {
+    executiveSummary: string;
+    actionItems: AiActionItem[];
+    minutesOfMeeting: AiMinutesOfMeeting;
+    generatedAt: number;
+    model: string;
+    transcriptLineCount: number;
+    transcriptUpdatedAt: number | null;
+  }
+
   export interface TranscriptSession {
     sessionId: string;
     status: RecordingStatus;
@@ -29,6 +58,7 @@ namespace LMCL {
     endedAt: number | null;
     lastCapturedAt: number | null;
     lines: TranscriptLine[];
+    aiArtifacts: AiMeetingArtifacts | null;
   }
 
   export interface TranscriptReducerOptions {
@@ -51,6 +81,17 @@ namespace LMCL {
 
   export type AutosaveStatus = "saved" | "saving" | "dirty" | "error";
 
+  export type AiGenerationStatus = "idle" | "generating";
+  export type AiConfigReason = "ready" | "disabled" | "missing_key";
+
+  export interface AiRuntimeState {
+    enabled: boolean;
+    configured: boolean;
+    model: string;
+    reason: AiConfigReason;
+    generationStatus: AiGenerationStatus;
+  }
+
   export interface TabRuntimeState {
     tabId: number | null;
     supported: boolean;
@@ -60,10 +101,11 @@ namespace LMCL {
     autosaveStatus: AutosaveStatus;
     autosaveError: string | null;
     error: ExtensionError | null;
+    ai: AiRuntimeState;
   }
 
   export interface StoredState {
-    version: 2;
+    version: 3;
     sessionsByTabId: Record<string, TranscriptSession>;
     sessionsByMeetingKey: Record<string, TranscriptSession>;
     updatedAt: number;
@@ -93,14 +135,29 @@ namespace LMCL {
       startedAt: null,
       endedAt: null,
       lastCapturedAt: null,
-      lines: []
+      lines: [],
+      aiArtifacts: null
     };
   }
 
   export function cloneSession(session: TranscriptSession): TranscriptSession {
     return {
       ...session,
-      lines: session.lines.map((line) => ({ ...line }))
+      lines: session.lines.map((line) => ({ ...line })),
+      aiArtifacts: session.aiArtifacts
+        ? {
+            ...session.aiArtifacts,
+            actionItems: session.aiArtifacts.actionItems.map((item) => ({ ...item })),
+            minutesOfMeeting: {
+              ...session.aiArtifacts.minutesOfMeeting,
+              attendees: [...session.aiArtifacts.minutesOfMeeting.attendees],
+              keyTopics: [...session.aiArtifacts.minutesOfMeeting.keyTopics],
+              decisions: [...session.aiArtifacts.minutesOfMeeting.decisions],
+              risks: [...session.aiArtifacts.minutesOfMeeting.risks],
+              nextSteps: [...session.aiArtifacts.minutesOfMeeting.nextSteps]
+            }
+          }
+        : null
     };
   }
 }

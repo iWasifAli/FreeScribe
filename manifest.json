@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "FreeScribe",
   "version": "0.1.0",
-  "description": "Capture visible Google Meet captions locally and export them to a text file.",
+  "description": "Capture visible Google Meet captions locally and optionally generate Gemini meeting notes.",
   "permissions": ["storage", "downloads", "sidePanel"],
   "host_permissions": ["https://meet.google.com/*"],
   "background": {

@@ -13,6 +13,20 @@ namespace LMCL {
     clearButton: HTMLButtonElement;
     saveButton: HTMLButtonElement;
     copyButton: HTMLButtonElement;
+    generateAiNotesButton: HTMLButtonElement;
+    copyAiNotesButton: HTMLButtonElement;
+    saveAiNotesButton: HTMLButtonElement;
+    aiStatusText: HTMLElement;
+    aiGeneratedMeta: HTMLElement;
+    aiSummaryText: HTMLElement;
+    aiActionItemsList: HTMLOListElement;
+    aiMomContent: HTMLElement;
+    aiTabSummary: HTMLButtonElement;
+    aiTabActions: HTMLButtonElement;
+    aiTabMom: HTMLButtonElement;
+    aiPanelSummary: HTMLElement;
+    aiPanelActions: HTMLElement;
+    aiPanelMom: HTMLElement;
     captionStatus: HTMLElement;
     autoScrollToggle: HTMLInputElement;
     latestCandidate: HTMLElement;
@@ -25,6 +39,9 @@ namespace LMCL {
 
   let currentState: TabRuntimeState | null = null;
   let copyFeedbackTimer: number | undefined;
+  let aiCopyFeedbackTimer: number | undefined;
+  type AiTab = "summary" | "actions" | "mom";
+  let currentAiTab: AiTab = "summary";
   type ThemeMode = "light" | "dark";
   const THEME_STORAGE_KEY = "freeScribe.theme";
 
@@ -51,6 +68,20 @@ namespace LMCL {
     clearButton: mustGetElement("clearButton"),
     saveButton: mustGetElement("saveButton"),
     copyButton: mustGetElement("copyButton"),
+    generateAiNotesButton: mustGetElement("generateAiNotesButton"),
+    copyAiNotesButton: mustGetElement("copyAiNotesButton"),
+    saveAiNotesButton: mustGetElement("saveAiNotesButton"),
+    aiStatusText: mustGetElement("aiStatusText"),
+    aiGeneratedMeta: mustGetElement("aiGeneratedMeta"),
+    aiSummaryText: mustGetElement("aiSummaryText"),
+    aiActionItemsList: mustGetElement("aiActionItemsList"),
+    aiMomContent: mustGetElement("aiMomContent"),
+    aiTabSummary: mustGetElement("aiTabSummary"),
+    aiTabActions: mustGetElement("aiTabActions"),
+    aiTabMom: mustGetElement("aiTabMom"),
+    aiPanelSummary: mustGetElement("aiPanelSummary"),
+    aiPanelActions: mustGetElement("aiPanelActions"),
+    aiPanelMom: mustGetElement("aiPanelMom"),
     captionStatus: mustGetElement("captionStatus"),
     autoScrollToggle: mustGetElement("autoScrollToggle"),
     latestCandidate: mustGetElement("latestCandidate"),
@@ -252,6 +283,27 @@ namespace LMCL {
     }, 900);
   }
 
+  function showAiCopyFeedback(): void {
+    if (aiCopyFeedbackTimer !== undefined) {
+      window.clearTimeout(aiCopyFeedbackTimer);
+    }
+
+    elements.copyAiNotesButton.classList.remove("copy-success");
+    void elements.copyAiNotesButton.offsetWidth;
+    elements.copyAiNotesButton.classList.add("copy-success");
+    elements.copyAiNotesButton.setAttribute("aria-label", "AI meeting notes copied");
+    elements.copyAiNotesButton.title = "Copied";
+
+    aiCopyFeedbackTimer = window.setTimeout(() => {
+      elements.copyAiNotesButton.classList.remove("copy-success");
+      elements.copyAiNotesButton.setAttribute("aria-label", "Copy AI meeting notes");
+      elements.copyAiNotesButton.title = elements.copyAiNotesButton.disabled
+        ? "Generate AI meeting notes before copying."
+        : "Copy AI meeting notes.";
+      aiCopyFeedbackTimer = undefined;
+    }, 900);
+  }
+
   async function copyTranscript(): Promise<void> {
     if (!currentState?.session.lines.length) {
       setError("No transcript lines to copy yet.");
@@ -269,6 +321,28 @@ namespace LMCL {
 
       setError("Copied transcript");
       showCopyFeedback();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Copy failed.");
+    }
+  }
+
+  async function copyAiNotes(): Promise<void> {
+    if (!currentState?.session.aiArtifacts) {
+      setError("Generate AI meeting notes before copying them.");
+      return;
+    }
+
+    const text = formatMeetingArtifactsAsMarkdown(currentState.session);
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else if (!copyTextWithFallback(text)) {
+        throw new Error("Clipboard API is unavailable.");
+      }
+
+      setError("Copied AI meeting notes");
+      showAiCopyFeedback();
     } catch (error) {
       setError(error instanceof Error ? error.message : "Copy failed.");
     }
@@ -299,10 +373,11 @@ namespace LMCL {
 
         const speaker = document.createElement("span");
         speaker.className = "transcript-speaker";
-        speaker.textContent = `${line.speaker}:`;
+        speaker.textContent = line.speaker;
 
         const text = document.createElement("span");
-        text.textContent = ` ${line.text}`;
+        text.className = "transcript-caption";
+        text.textContent = line.text;
 
         body.append(speaker, text);
         row.append(time, body);
@@ -346,6 +421,167 @@ namespace LMCL {
     }
   }
 
+  function setAiTab(tab: AiTab): void {
+    currentAiTab = tab;
+    const tabs: Array<[AiTab, HTMLButtonElement, HTMLElement]> = [
+      ["summary", elements.aiTabSummary, elements.aiPanelSummary],
+      ["actions", elements.aiTabActions, elements.aiPanelActions],
+      ["mom", elements.aiTabMom, elements.aiPanelMom]
+    ];
+
+    for (const [tabName, tabButton, panel] of tabs) {
+      const active = tabName === tab;
+      tabButton.classList.toggle("active", active);
+      tabButton.setAttribute("aria-selected", active ? "true" : "false");
+      panel.classList.toggle("active", active);
+      panel.hidden = !active;
+    }
+  }
+
+  function renderActionItems(items: AiActionItem[]): void {
+    const fragment = document.createDocumentFragment();
+
+    if (items.length === 0) {
+      const empty = document.createElement("li");
+      empty.className = "ai-empty-row";
+      empty.textContent = "No action items identified.";
+      fragment.appendChild(empty);
+    } else {
+      for (const item of items) {
+        const row = document.createElement("li");
+        row.className = "ai-action-row";
+
+        const task = document.createElement("div");
+        task.className = "ai-action-task";
+        task.textContent = item.task;
+
+        const meta = document.createElement("div");
+        meta.className = "ai-action-meta";
+        meta.textContent = [
+          item.owner ? `Owner: ${item.owner}` : "Owner: Unassigned",
+          item.dueDate ? `Due: ${item.dueDate}` : "Due: Unspecified",
+          `Priority: ${item.priority}`,
+          `Status: ${item.status || "open"}`
+        ].join(" | ");
+
+        row.append(task, meta);
+        fragment.appendChild(row);
+      }
+    }
+
+    elements.aiActionItemsList.replaceChildren(fragment);
+  }
+
+  function appendMomSection(fragment: DocumentFragment, title: string, items: string[], emptyText: string): void {
+    const heading = document.createElement("h3");
+    heading.textContent = title;
+    fragment.appendChild(heading);
+
+    const list = document.createElement("ul");
+    list.className = "ai-mom-list";
+
+    const values = items.length > 0 ? items : [emptyText];
+    for (const value of values) {
+      const item = document.createElement("li");
+      item.textContent = value;
+      if (items.length === 0) {
+        item.className = "ai-muted-item";
+      }
+      list.appendChild(item);
+    }
+
+    fragment.appendChild(list);
+  }
+
+  function renderMom(minutes: AiMinutesOfMeeting): void {
+    const fragment = document.createDocumentFragment();
+    const overview = document.createElement("p");
+    overview.className = "ai-body-text";
+    overview.textContent = minutes.overview || "No overview generated.";
+    fragment.appendChild(overview);
+
+    appendMomSection(fragment, "Attendees", minutes.attendees, "No attendees identified.");
+    appendMomSection(fragment, "Key topics", minutes.keyTopics, "No key topics identified.");
+    appendMomSection(fragment, "Decisions", minutes.decisions, "No decisions identified.");
+    appendMomSection(fragment, "Risks", minutes.risks, "No risks identified.");
+    appendMomSection(fragment, "Next steps", minutes.nextSteps, "No next steps identified.");
+
+    elements.aiMomContent.replaceChildren(fragment);
+  }
+
+  function renderAiArtifacts(session: TranscriptSession): void {
+    const artifacts = session.aiArtifacts;
+
+    if (!artifacts) {
+      elements.aiGeneratedMeta.textContent = "No AI notes generated yet.";
+      elements.aiSummaryText.textContent = "No AI notes generated yet.";
+      renderActionItems([]);
+      renderMom({
+        overview: "",
+        attendees: [],
+        keyTopics: [],
+        decisions: [],
+        risks: [],
+        nextSteps: []
+      });
+      return;
+    }
+
+    elements.aiGeneratedMeta.textContent = `Generated ${formatLocalDateTime(artifacts.generatedAt)} with ${artifacts.model}`;
+    elements.aiSummaryText.textContent = artifacts.executiveSummary || "No executive summary generated.";
+    renderActionItems(artifacts.actionItems);
+    renderMom(artifacts.minutesOfMeeting);
+  }
+
+  function renderAiSection(state: TabRuntimeState): void {
+    const session = state.session;
+    const hasLines = session.lines.length > 0;
+    const hasArtifacts = Boolean(session.aiArtifacts);
+    const hasCurrentArtifacts = hasCurrentAiArtifacts(session);
+    const isGenerating = state.ai.generationStatus === "generating";
+    const canGenerate = hasLines && state.ai.enabled && state.ai.configured && !isGenerating;
+
+    elements.generateAiNotesButton.disabled = !canGenerate;
+    elements.copyAiNotesButton.disabled = !hasArtifacts;
+    elements.saveAiNotesButton.disabled = !hasArtifacts;
+    elements.copyAiNotesButton.title = hasArtifacts ? "Copy AI meeting notes." : "Generate AI meeting notes before copying.";
+    elements.saveAiNotesButton.title = hasArtifacts ? "Save AI meeting notes as Markdown." : "Generate AI meeting notes before saving.";
+
+    if (!state.ai.enabled) {
+      elements.generateAiNotesButton.textContent = "AI disabled";
+      elements.generateAiNotesButton.title = "AI meeting notes are disabled for this build.";
+      elements.aiStatusText.textContent = "AI disabled for this build.";
+    } else if (!state.ai.configured) {
+      elements.generateAiNotesButton.textContent = "Add Gemini key";
+      elements.generateAiNotesButton.title = "Set FREESCRIBE_GEMINI_API_KEY in .env, rebuild, and reload the extension.";
+      elements.aiStatusText.textContent = "Gemini key missing in this build.";
+    } else if (!hasLines) {
+      elements.generateAiNotesButton.textContent = "Generate notes";
+      elements.generateAiNotesButton.title = "Capture transcript lines before generating notes.";
+      elements.aiStatusText.textContent = "Capture captions first.";
+    } else if (isGenerating) {
+      elements.generateAiNotesButton.textContent = "Generating...";
+      elements.generateAiNotesButton.title = "AI meeting notes are being generated.";
+      elements.aiStatusText.textContent = "Generating notes...";
+    } else if (hasArtifacts && !hasCurrentArtifacts) {
+      elements.generateAiNotesButton.textContent = "Regenerate notes";
+      elements.generateAiNotesButton.title = "Regenerate notes for the latest transcript.";
+      elements.aiStatusText.textContent = "Transcript changed since notes were generated.";
+    } else if (hasArtifacts) {
+      elements.generateAiNotesButton.textContent = "Regenerate notes";
+      elements.generateAiNotesButton.title = "Generate a fresh version of the AI meeting notes.";
+      elements.aiStatusText.textContent = "AI notes ready.";
+    } else {
+      elements.generateAiNotesButton.textContent = "Generate notes";
+      elements.generateAiNotesButton.title = "Generate summary, action items, and MoM from the transcript.";
+      elements.aiStatusText.textContent = "Ready.";
+    }
+
+    elements.aiGeneratedMeta.classList.toggle("stale", hasArtifacts && !hasCurrentArtifacts);
+    renderAiArtifacts(session);
+    setAiTab(currentAiTab);
+  }
+
   function render(state: TabRuntimeState): void {
     currentState = state;
     const session = state.session;
@@ -377,6 +613,7 @@ namespace LMCL {
     buttonState(session.status, state.supported, hasLines);
     renderCaptionStatus(state);
     renderTranscript(session.lines);
+    renderAiSection(state);
 
     const errorMessage = state.error?.message || state.autosaveError || "";
     if (errorMessage) {
@@ -407,7 +644,14 @@ namespace LMCL {
   elements.stopButton.addEventListener("click", () => void runCommand(MessageType.STOP_RECORDING));
   elements.saveButton.addEventListener("click", () => void runCommand(MessageType.SAVE_TXT));
   elements.copyButton.addEventListener("click", () => void copyTranscript());
+  elements.generateAiNotesButton.addEventListener("click", () => void runCommand(MessageType.GENERATE_MEETING_ARTIFACTS));
+  elements.copyAiNotesButton.addEventListener("click", () => void copyAiNotes());
+  elements.saveAiNotesButton.addEventListener("click", () => void runCommand(MessageType.SAVE_AI_NOTES_MD));
   elements.themeToggle.addEventListener("click", toggleTheme);
+
+  elements.aiTabSummary.addEventListener("click", () => setAiTab("summary"));
+  elements.aiTabActions.addEventListener("click", () => setAiTab("actions"));
+  elements.aiTabMom.addEventListener("click", () => setAiTab("mom"));
 
   elements.clearButton.addEventListener("click", () => {
     if (currentState?.session.lines.length) {

@@ -29,4 +29,4 @@ assignees: ""
 
 ## Additional Context
 
-Do not include private meeting content, transcript data, credentials, or sensitive screenshots.
+Do not include private meeting content, transcript data, Gemini API keys, credentials, keyed build output, or sensitive screenshots.

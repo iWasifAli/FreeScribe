@@ -2,7 +2,7 @@
   "name": "freescribe",
   "version": "0.1.0",
   "private": true,
-  "description": "Local-only Chrome MV3 extension for saving visible Google Meet captions as a raw text transcript.",
+  "description": "Local-first Chrome MV3 extension for saving Google Meet captions and optional Gemini meeting notes.",
   "license": "Apache-2.0",
   "author": "Wasif Ali",
   "homepage": "https://github.com/iWasifAli/FreeScribe#readme",
@@ -24,7 +24,7 @@
   "type": "module",
   "scripts": {
     "clean": "node scripts/clean.mjs",
-    "build": "npm run clean && tsc -p tsconfig.background.json && tsc -p tsconfig.content.json && tsc -p tsconfig.sidepanel.json && node scripts/copy-assets.mjs",
+    "build": "npm run clean && tsc -p tsconfig.background.json && tsc -p tsconfig.content.json && tsc -p tsconfig.sidepanel.json && node scripts/inject-env.mjs && node scripts/copy-assets.mjs",
     "build:test": "tsc -p tsconfig.shared.json",
     "package": "npm run build && node scripts/package-extension.mjs",
     "test": "npm run build:test && node --test tests/*.test.mjs"

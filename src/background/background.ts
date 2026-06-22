@@ -571,12 +571,8 @@ namespace LMCL {
             }
           ],
           generationConfig: {
-            responseFormat: {
-              text: {
-                mimeType: "application/json",
-                schema: MEETING_ARTIFACTS_SCHEMA
-              }
-            }
+            responseMimeType: "application/json",
+            responseSchema: MEETING_ARTIFACTS_SCHEMA
           }
         }),
         signal: controller.signal

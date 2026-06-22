@@ -14,8 +14,16 @@ namespace LMCL {
           type: "object",
           properties: {
             task: { type: "string", description: "The concrete action to take." },
-            owner: { type: ["string", "null"], description: "Owner named in the transcript, or null." },
-            dueDate: { type: ["string", "null"], description: "Due date mentioned in the transcript, or null." },
+            owner: {
+              type: "string",
+              nullable: true,
+              description: "Owner named in the transcript, or null."
+            },
+            dueDate: {
+              type: "string",
+              nullable: true,
+              description: "Due date mentioned in the transcript, or null."
+            },
             priority: {
               type: "string",
               enum: ["low", "medium", "high", "unknown"],

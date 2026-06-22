@@ -6,7 +6,7 @@ FreeScribe is currently distributed as source for local installation. Security a
 
 ## Reporting a Vulnerability
 
-Do not include private meeting content, transcript data, credentials, access tokens, or personal data in public GitHub issues.
+Do not include private meeting content, transcript data, Gemini API keys, credentials, access tokens, or personal data in public GitHub issues.
 
 Report security or privacy concerns through the repository's private security advisory process. Include:
 
@@ -22,9 +22,17 @@ We aim to acknowledge reports within 5 business days and will coordinate remedia
 Security reports may include:
 
 - Transcript over-collection or unexpected data retention
+- Unexpected Gemini API calls when AI is disabled or no key is configured
+- Accidental exposure of API keys in source, generated builds, release artifacts, logs, or screenshots
 - Extension permission misuse
 - Cross-context message handling flaws
 - Download/export privacy issues
 - Build or release integrity concerns
 
 General feature requests and non-sensitive bugs should use GitHub issues.
+
+## Gemini API Key Handling
+
+Gemini meeting notes are optional and intended for local source builds. If `FREESCRIBE_AI_ENABLED=false` or `GEMINI_API_KEY` is empty, transcript capture/export should keep working without Gemini network permission.
+
+When a Gemini key is configured, the build injects it into `dist/background.js` and adds `https://generativelanguage.googleapis.com/*` to the generated extension manifest. Treat keyed `dist` folders and ZIPs as sensitive local artifacts. Do not commit, publish, upload, or attach builds that contain a personal API key.

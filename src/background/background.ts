@@ -1,6 +1,13 @@
 namespace LMCL {
   const MEET_URL_PREFIX = "https://meet.google.com/";
   const AUTOSAVE_DEBOUNCE_MS = 1_000;
+  const AI_GENERATE_TIMEOUT_MS = 60_000;
+  const GEMINI_API_KEY_PLACEHOLDER = "__FREESCRIBE_GEMINI_API_KEY__";
+  const GEMINI_MODEL_PLACEHOLDER = "__FREESCRIBE_GEMINI_MODEL__";
+  const AI_ENABLED_PLACEHOLDER = "__FREESCRIBE_AI_ENABLED__";
+  const INJECTED_GEMINI_API_KEY = "__FREESCRIBE_GEMINI_API_KEY__";
+  const INJECTED_GEMINI_MODEL = "__FREESCRIBE_GEMINI_MODEL__";
+  const INJECTED_AI_ENABLED = "__FREESCRIBE_AI_ENABLED__";
 
   const sessionsByTabId: Record<string, TranscriptSession> = {};
   const sessionsByMeetingKey: Record<string, TranscriptSession> = {};
@@ -9,6 +16,7 @@ namespace LMCL {
   const autosaveErrorByTabId: Record<string, string | null> = {};
   const runtimeErrorByTabId: Record<string, ExtensionError | null> = {};
   const contentScriptAvailableByTabId: Record<string, boolean> = {};
+  const aiGenerationByTabId: Record<string, boolean> = {};
 
   let storageLoaded = false;
   let storageLoadPromise: Promise<void> | null = null;
@@ -16,6 +24,42 @@ namespace LMCL {
 
   function tabKey(tabId: number | null | undefined): string {
     return String(tabId ?? "active");
+  }
+
+  function readInjectedValue(value: string, placeholder: string): string {
+    return value === placeholder ? "" : value.trim();
+  }
+
+  function isDisabledEnvValue(value: string): boolean {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "0" || normalized === "false" || normalized === "off" || normalized === "no";
+  }
+
+  function getAiConfig(): Omit<AiRuntimeState, "generationStatus"> & { apiKey: string } {
+    const enabledValue = readInjectedValue(INJECTED_AI_ENABLED, AI_ENABLED_PLACEHOLDER);
+    const enabled = enabledValue ? !isDisabledEnvValue(enabledValue) : true;
+    const apiKey = readInjectedValue(INJECTED_GEMINI_API_KEY, GEMINI_API_KEY_PLACEHOLDER);
+    const model = readInjectedValue(INJECTED_GEMINI_MODEL, GEMINI_MODEL_PLACEHOLDER) || "gemini-3.5-flash";
+    const configured = enabled && Boolean(apiKey);
+
+    return {
+      enabled,
+      configured,
+      model,
+      reason: !enabled ? "disabled" : configured ? "ready" : "missing_key",
+      apiKey
+    };
+  }
+
+  function getAiRuntimeState(tabId: number | null | undefined): AiRuntimeState {
+    const config = getAiConfig();
+    return {
+      enabled: config.enabled,
+      configured: config.configured,
+      model: config.model,
+      reason: config.reason,
+      generationStatus: aiGenerationByTabId[tabKey(tabId)] ? "generating" : "idle"
+    };
   }
 
   function isMeetUrl(url: string | null | undefined): boolean {
@@ -234,7 +278,8 @@ namespace LMCL {
       captions: { ...getCaptionState(tabId) },
       autosaveStatus: autosaveStatusByTabId[key] ?? "saved",
       autosaveError: autosaveErrorByTabId[key] ?? null,
-      error: runtimeErrorByTabId[key] ?? null
+      error: runtimeErrorByTabId[key] ?? null,
+      ai: getAiRuntimeState(tabId)
     };
   }
 
@@ -345,7 +390,8 @@ namespace LMCL {
       startedAt,
       endedAt: null,
       lastCapturedAt: null,
-      lines: []
+      lines: [],
+      aiArtifacts: null
     };
 
     setSession(tabId, session);
@@ -441,6 +487,194 @@ namespace LMCL {
     const text = formatTranscriptAsTxt(session);
     const filename = createTranscriptFilename(session);
     return { ok: true, filename, text };
+  }
+
+  async function readGeminiErrorMessage(response: Response): Promise<string> {
+    try {
+      const body = await response.json();
+      const message = body?.error?.message;
+      if (typeof message === "string" && message.trim()) {
+        return message.trim();
+      }
+    } catch {
+      // Fall through to the HTTP status message.
+    }
+
+    return response.statusText || `HTTP ${response.status}`;
+  }
+
+  function extractGeminiText(responseBody: unknown): string {
+    if (typeof responseBody !== "object" || responseBody === null) {
+      throw new Error("Gemini returned an empty response.");
+    }
+
+    const body = responseBody as {
+      promptFeedback?: { blockReason?: unknown };
+      candidates?: Array<{
+        finishReason?: unknown;
+        content?: { parts?: Array<{ text?: unknown }> };
+      }>;
+    };
+
+    const blockReason = typeof body.promptFeedback?.blockReason === "string" ? body.promptFeedback.blockReason : "";
+    if (blockReason) {
+      throw new Error(`Gemini blocked the request: ${blockReason}.`);
+    }
+
+    const candidate = body.candidates?.[0];
+    const text = candidate?.content?.parts
+      ?.map((part) => (typeof part.text === "string" ? part.text : ""))
+      .join("")
+      .trim();
+
+    if (!text) {
+      const finishReason = typeof candidate?.finishReason === "string" ? candidate.finishReason : "unknown";
+      throw new Error(`Gemini did not return meeting notes. Finish reason: ${finishReason}.`);
+    }
+
+    return text;
+  }
+
+  async function requestGeminiArtifacts(
+    session: TranscriptSession,
+    config: Omit<AiRuntimeState, "generationStatus"> & { apiKey: string }
+  ): Promise<AiMeetingArtifacts> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), AI_GENERATE_TIMEOUT_MS);
+    const generatedAt = Date.now();
+    const transcriptUpdatedAt = getTranscriptUpdatedAt(session);
+    const modelId = config.model.replace(/^models\//, "");
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent`;
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": config.apiKey
+        },
+        body: JSON.stringify({
+          system_instruction: {
+            parts: [
+              {
+                text: [
+                  "You are FreeScribe's meeting-notes assistant.",
+                  "Return factual JSON only. Never invent details missing from the transcript."
+                ].join(" ")
+              }
+            ]
+          },
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: buildMeetingArtifactsPrompt(session) }]
+            }
+          ],
+          generationConfig: {
+            responseFormat: {
+              text: {
+                mimeType: "application/json",
+                schema: MEETING_ARTIFACTS_SCHEMA
+              }
+            }
+          }
+        }),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        const message = await readGeminiErrorMessage(response);
+        throw new Error(`Gemini request failed: ${message}`);
+      }
+
+      const responseBody = await response.json();
+      return parseMeetingArtifactsJson(extractGeminiText(responseBody), {
+        generatedAt,
+        model: config.model,
+        transcriptLineCount: session.lines.length,
+        transcriptUpdatedAt
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new Error("Gemini request timed out. Try again with a shorter transcript.");
+      }
+
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async function generateMeetingArtifacts(
+    tabId: number
+  ): Promise<{ ok: true; state: TabRuntimeState } | { ok: false; error: ExtensionError }> {
+    const tab = await getTab(tabId);
+    const session = getSession(tabId);
+    const config = getAiConfig();
+
+    if (!config.enabled) {
+      return errorResponse(
+        "AI_DISABLED",
+        "AI meeting notes are disabled for this build. Set FREESCRIBE_AI_ENABLED=true and GEMINI_API_KEY in .env, then rebuild."
+      );
+    }
+
+    if (!config.configured) {
+      return errorResponse(
+        "GEMINI_API_KEY_MISSING",
+        "Missing Gemini API key. Set GEMINI_API_KEY in .env, then run npm run build and reload the extension."
+      );
+    }
+
+    if (session.lines.length === 0) {
+      return errorResponse("EMPTY_TRANSCRIPT", "Capture transcript lines before generating AI meeting notes.");
+    }
+
+    if (aiGenerationByTabId[tabKey(tabId)]) {
+      return errorResponse("AI_GENERATION_IN_PROGRESS", "AI meeting notes are already being generated.");
+    }
+
+    aiGenerationByTabId[tabKey(tabId)] = true;
+    await broadcastTabState(tabId);
+
+    try {
+      const artifacts = await requestGeminiArtifacts(session, config);
+      const nextSession: TranscriptSession = {
+        ...session,
+        aiArtifacts: artifacts
+      };
+
+      setSession(tabId, nextSession);
+      await flushAutosave();
+      return { ok: true, state: buildTabState(tab, tabId) };
+    } catch (error) {
+      return errorResponse("AI_GENERATION_FAILED", error instanceof Error ? error.message : "AI generation failed.");
+    } finally {
+      delete aiGenerationByTabId[tabKey(tabId)];
+      await broadcastTabState(tabId);
+    }
+  }
+
+  function prepareAiNotesExport(
+    tabId: number
+  ): { ok: true; filename: string; text: string } | { ok: false; error: ExtensionError } {
+    const session = getSession(tabId);
+
+    if (!session.aiArtifacts) {
+      return {
+        ok: false,
+        error: {
+          code: "NO_AI_NOTES",
+          message: "Generate AI meeting notes before saving them."
+        }
+      };
+    }
+
+    return {
+      ok: true,
+      filename: createMeetingArtifactsFilename(session),
+      text: formatMeetingArtifactsAsMarkdown(session)
+    };
   }
 
   function isContentScriptSender(sender: any): boolean {
@@ -565,6 +799,26 @@ namespace LMCL {
           return { ok: false, error: { code: "NO_ACTIVE_TAB", message: "No active tab found." } };
         }
         return prepareTxtExport(tabId);
+      }
+      case MessageType.GENERATE_MEETING_ARTIFACTS: {
+        if (senderIsContentScript) {
+          return errorResponse("UNAUTHORIZED_SENDER", "This command is not available from a content script.");
+        }
+        const tabId = uiTabId;
+        if (typeof tabId !== "number") {
+          return { ok: false, error: { code: "NO_ACTIVE_TAB", message: "No active tab found." } };
+        }
+        return generateMeetingArtifacts(tabId);
+      }
+      case MessageType.SAVE_AI_NOTES_MD: {
+        if (senderIsContentScript) {
+          return errorResponse("UNAUTHORIZED_SENDER", "This command is not available from a content script.");
+        }
+        const tabId = uiTabId;
+        if (typeof tabId !== "number") {
+          return { ok: false, error: { code: "NO_ACTIVE_TAB", message: "No active tab found." } };
+        }
+        return prepareAiNotesExport(tabId);
       }
       case MessageType.CAPTION_CANDIDATE: {
         const tabId = contentTabId;

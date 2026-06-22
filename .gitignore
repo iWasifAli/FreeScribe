@@ -1,5 +1,7 @@
 .codex/
 .directory
+.env
+.env.local
 dist/
 node_modules/
 release/

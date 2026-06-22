@@ -27,6 +27,87 @@ namespace LMCL {
     return { id, speaker, text, startedAt, updatedAt, revision, sourceNodeHash };
   }
 
+  function sanitizeStoredTextArray(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value
+      .map((item) => normalizeText(String(item ?? "")))
+      .filter((item) => item.length > 0);
+  }
+
+  function sanitizeStoredPriority(value: unknown): AiActionPriority {
+    return value === "low" || value === "medium" || value === "high" || value === "unknown"
+      ? value
+      : "unknown";
+  }
+
+  function sanitizeStoredActionItems(value: unknown): AiActionItem[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    const items: AiActionItem[] = [];
+    for (const item of value) {
+      if (!isRecord(item)) {
+        continue;
+      }
+
+      const task = normalizeText(String(item.task ?? ""));
+      if (!task) {
+        continue;
+      }
+
+      items.push({
+        task,
+        owner: item.owner === null || item.owner === undefined ? null : normalizeText(String(item.owner)) || null,
+        dueDate: item.dueDate === null || item.dueDate === undefined ? null : normalizeText(String(item.dueDate)) || null,
+        priority: sanitizeStoredPriority(item.priority),
+        status: normalizeText(String(item.status ?? "")) || "open"
+      });
+    }
+
+    return items;
+  }
+
+  function sanitizeStoredMinutes(value: unknown): AiMinutesOfMeeting {
+    const source = isRecord(value) ? value : {};
+    return {
+      overview: normalizeText(String(source.overview ?? "")),
+      attendees: sanitizeStoredTextArray(source.attendees),
+      keyTopics: sanitizeStoredTextArray(source.keyTopics),
+      decisions: sanitizeStoredTextArray(source.decisions),
+      risks: sanitizeStoredTextArray(source.risks),
+      nextSteps: sanitizeStoredTextArray(source.nextSteps)
+    };
+  }
+
+  function sanitizeStoredAiArtifacts(value: unknown): AiMeetingArtifacts | null {
+    if (!isRecord(value)) {
+      return null;
+    }
+
+    const generatedAt = typeof value.generatedAt === "number" ? value.generatedAt : 0;
+    const model = typeof value.model === "string" ? normalizeText(value.model) : "";
+    const transcriptLineCount = typeof value.transcriptLineCount === "number" ? value.transcriptLineCount : -1;
+    const transcriptUpdatedAt = typeof value.transcriptUpdatedAt === "number" ? value.transcriptUpdatedAt : null;
+
+    if (!generatedAt || !model || transcriptLineCount < 0) {
+      return null;
+    }
+
+    return {
+      executiveSummary: normalizeText(String(value.executiveSummary ?? "")),
+      actionItems: sanitizeStoredActionItems(value.actionItems),
+      minutesOfMeeting: sanitizeStoredMinutes(value.minutesOfMeeting),
+      generatedAt,
+      model,
+      transcriptLineCount,
+      transcriptUpdatedAt
+    };
+  }
+
   function sanitizeSession(value: unknown): TranscriptSession | null {
     if (!isRecord(value)) {
       return null;
@@ -46,7 +127,8 @@ namespace LMCL {
       startedAt: typeof value.startedAt === "number" ? value.startedAt : null,
       endedAt: typeof value.endedAt === "number" ? value.endedAt : null,
       lastCapturedAt: typeof value.lastCapturedAt === "number" ? value.lastCapturedAt : null,
-      lines
+      lines,
+      aiArtifacts: sanitizeStoredAiArtifacts(value.aiArtifacts)
     };
   }
 
@@ -54,7 +136,7 @@ namespace LMCL {
     const result = await chrome.storage.local.get(STORAGE_KEY);
     const stored = result?.[STORAGE_KEY];
     const empty: StoredState = {
-      version: 2,
+      version: 3,
       sessionsByTabId: {},
       sessionsByMeetingKey: {},
       updatedAt: Date.now()
@@ -76,7 +158,7 @@ namespace LMCL {
       }
     }
 
-    if (stored.version === 2 && isRecord(stored.sessionsByMeetingKey)) {
+    if ((stored.version === 2 || stored.version === 3) && isRecord(stored.sessionsByMeetingKey)) {
       for (const [meetingKey, sessionValue] of Object.entries(stored.sessionsByMeetingKey)) {
         const session = sanitizeSession(sessionValue);
         if (session) {
@@ -86,7 +168,7 @@ namespace LMCL {
     }
 
     return {
-      version: 2,
+      version: 3,
       sessionsByTabId,
       sessionsByMeetingKey,
       updatedAt: typeof stored.updatedAt === "number" ? stored.updatedAt : Date.now()
@@ -98,7 +180,7 @@ namespace LMCL {
     sessionsByMeetingKey: Record<string, TranscriptSession>
   ): Promise<void> {
     const state: StoredState = {
-      version: 2,
+      version: 3,
       sessionsByTabId,
       sessionsByMeetingKey,
       updatedAt: Date.now()

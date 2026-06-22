@@ -1,12 +1,12 @@
 # FreeScribe
 
-FreeScribe is a local-first Chrome Manifest V3 extension for capturing Google Meet captions that are already visible in the browser and exporting them as a plain text transcript.
+FreeScribe is a local-first Chrome Manifest V3 extension for capturing Google Meet captions that are already visible in the browser, exporting them as a plain text transcript, and optionally generating Gemini-powered meeting notes.
 
 FreeScribe is a solo-built open-source project by Wasif Ali from Pakistan 🇵🇰.
 
 ## Overview
 
-FreeScribe is designed for teams that need a simple way to preserve meeting captions without introducing a recording service, cloud sync layer, bot participant, or AI processing pipeline. The extension runs in Chrome, watches the rendered Google Meet caption UI only during an active user-started capture session, stores transcript state locally, and lets the user download a `.txt` file on demand.
+FreeScribe is designed for teams that need a simple way to preserve meeting captions without introducing a recording service, cloud sync layer, or bot participant. The extension runs in Chrome, watches the rendered Google Meet caption UI only during an active user-started capture session, stores transcript state locally, and lets the user download transcript and notes files on demand.
 
 The extension does not record audio, video, screen content, microphone input, camera input, chat messages, or Google account data. It only reads caption text that Google Meet has already rendered into the page after the user enables captions in the meeting.
 
@@ -16,18 +16,23 @@ The extension does not record audio, video, screen content, microphone input, ca
 - Start, pause, resume, stop, clear, copy, and save transcript sessions from a Chrome side panel.
 - Keep transcript state in `chrome.storage.local` until the user clears it or uninstalls the extension.
 - Export transcript output as a raw `.txt` file.
+- Optionally generate a Gemini executive summary, action items, and Minutes of Meeting from the captured transcript.
+- Copy or save generated AI meeting notes as Markdown when AI is enabled for the local build.
 - Include timestamps and speaker labels when Google Meet exposes them in the caption UI.
 - Deduplicate progressive caption updates so partial caption revisions collapse into cleaner transcript lines.
 - Generate readable transcript filenames based on date, time, and meeting title when available.
-- Run without a backend server, account system, analytics SDK, telemetry, or external network requests from the extension.
+- Run without a backend server, account system, analytics SDK, or telemetry.
+- Keep AI disabled by default when no Gemini API key is configured.
 
 ## Privacy Model
 
-FreeScribe is intentionally local-only.
+FreeScribe is local-first. Transcript capture, transcript storage, and transcript export work without any external AI service.
 
 Transcript state is stored in `chrome.storage.local` and may persist across browser restarts until it is cleared by the user or removed with the extension. Caption text capture starts only after the user clicks **Start recording**. Capture is stopped when the user pauses, stops, or clears the session.
 
-A transcript file is written only when the user clicks **Save transcript**. The extension does not send transcript content to Google APIs, third-party APIs, AI services, or any other remote service.
+A transcript file is written only when the user clicks **Save transcript**. If AI is disabled or no Gemini key is configured, the extension does not send transcript content to Google APIs, third-party APIs, AI services, or any other remote service.
+
+When `FREESCRIBE_AI_ENABLED=true` and `GEMINI_API_KEY` is present at build time, clicking **Generate notes** sends the current transcript text to the Gemini API to generate an executive summary, action items, and MoM. Generated notes are stored locally with the transcript session. The API key is injected into the unpacked `dist` extension for local use, so do not publish a build containing a personal key.
 
 Requested Chrome permissions are limited to:
 
@@ -35,6 +40,7 @@ Requested Chrome permissions are limited to:
 - `downloads`
 - `sidePanel`
 - `https://meet.google.com/*`
+- `https://generativelanguage.googleapis.com/*` only in builds where Gemini AI is configured
 
 The extension does not request microphone, camera, desktop capture, tab capture, browsing history, cookies, identity, or `<all_urls>` permissions.
 
@@ -42,7 +48,7 @@ The extension does not request microphone, camera, desktop capture, tab capture,
 
 Google Meet captions are rendered into the meeting page after captions are enabled by the user. FreeScribe injects a content script on Google Meet pages, waits for the user to start capture, observes caption-like live regions in the DOM, normalizes caption text, and sends transcript events to the extension side panel.
 
-The side panel owns the user workflow and transcript state. It can start or pause capture, display the current transcript, clear local state, and ask Chrome to download the exported `.txt` file.
+The side panel owns the user workflow and transcript state. It can start or pause capture, display the current transcript, clear local state, ask Chrome to download the exported `.txt` file, and request optional Gemini meeting notes through the extension background worker when AI is configured.
 
 Because the extension depends on Google Meet's rendered caption UI, changes to Google Meet's DOM structure may require updates to the caption extraction logic.
 
@@ -86,6 +92,8 @@ Load the extension in Chrome:
 5. Use **Pause**, **Resume**, **Stop**, and **Clear** as needed.
 6. Use the copy button to copy the transcript when needed.
 7. Click **Save transcript** to download the transcript.
+8. If Gemini AI is enabled for your build, click **Generate notes** to create summary, action items, and MoM from the current transcript.
+9. Use the AI notes copy or save buttons to export generated notes as Markdown.
 
 Transcript lines are saved in this format:
 
@@ -101,6 +109,13 @@ meet-transcript_YYYY-MM-DD_HH-mm.txt
 meet-transcript_<meeting-title>_YYYY-MM-DD_HH-mm.txt
 ```
 
+Generated AI notes use one of these filename formats:
+
+```txt
+meet-notes_YYYY-MM-DD_HH-mm.md
+meet-notes_<meeting-title>_YYYY-MM-DD_HH-mm.md
+```
+
 ## Development
 
 Install dependencies:
@@ -108,6 +123,28 @@ Install dependencies:
 ```bash
 npm install
 ```
+
+Optional Gemini configuration:
+
+```bash
+cp .env.example .env
+```
+
+Set these values in `.env` before building:
+
+```env
+FREESCRIBE_AI_ENABLED=true
+GEMINI_API_KEY=your-gemini-api-key
+GEMINI_MODEL=gemini-3.5-flash
+```
+
+To build FreeScribe without AI, leave `GEMINI_API_KEY` empty or set:
+
+```env
+FREESCRIBE_AI_ENABLED=false
+```
+
+No-key or disabled builds keep transcript capture/export working and do not add the Gemini host permission to `dist/manifest.json`.
 
 Run the full build:
 
@@ -164,8 +201,8 @@ Key areas:
 - `src/sidepanel/` contains the Chrome side panel UI and transcript workflow.
 - `src/background/` contains the Manifest V3 service worker.
 - `src/shared/` contains reusable transcript, storage, messaging, time, slugging, and export utilities.
-- `tests/` contains Node test coverage for transcript reduction, caption deduplication, filename slugging, and TXT export formatting.
-- `scripts/` contains build support scripts for cleaning, copying extension assets, and packaging release ZIPs.
+- `tests/` contains Node test coverage for transcript reduction, caption deduplication, filename slugging, TXT export formatting, AI artifact formatting, and storage migration.
+- `scripts/` contains build support scripts for cleaning, copying extension assets, optional environment injection, manifest permission generation, and packaging release ZIPs.
 
 ## Testing
 
@@ -181,6 +218,8 @@ The test suite currently covers:
 - Progressive caption deduplication
 - Filename slug generation
 - Plain text transcript export formatting
+- AI artifact parsing and Markdown export formatting
+- Stored session migration, including no-AI defaults
 
 CI runs `npm ci`, `npm test`, `npm run build`, and `npm run package` for pushes and pull requests.
 
@@ -202,8 +241,11 @@ Manual QA is still important because the most integration-sensitive behavior dep
 12. Click **Resume** and confirm transcript capture continues.
 13. Click **Stop** and confirm the transcript remains visible.
 14. Click **Save transcript** and inspect the downloaded file.
-15. Refresh the Meet tab and confirm the extension handles reconnecting without crashing.
-16. Reload the extension and confirm autosaved state restores where practical.
+15. With no Gemini key configured, confirm the AI notes panel is disabled and transcript controls still work.
+16. With `GEMINI_API_KEY` configured and the extension rebuilt, click **Generate notes** and confirm summary, actions, and MoM render.
+17. Copy and save generated AI notes, then inspect the Markdown output.
+18. Refresh the Meet tab and confirm the extension handles reconnecting without crashing.
+19. Reload the extension and confirm autosaved state restores where practical.
 
 ## Debugging
 
@@ -234,6 +276,9 @@ localStorage.setItem("lmclDebug", "1")
 - Speaker names depend on what Google Meet exposes in the caption UI.
 - Progressive captions are deduplicated heuristically, so imperfect transcript lines are possible.
 - The extension does not capture Google Meet chat messages.
+- Gemini notes require a local build with `GEMINI_API_KEY` and `FREESCRIBE_AI_ENABLED=true`.
+- Direct-extension Gemini builds embed the API key in `dist/background.js`; use a backend proxy before distributing keyed builds publicly.
+- AI-generated notes can be incomplete or inaccurate and should be reviewed against the transcript.
 - The extension does not provide participant consent flows, legal notices, compliance controls, or retention policy enforcement.
 - This project is not a legal, compliance, or consent-management tool.
 
@@ -241,7 +286,7 @@ Only capture meeting captions when you have the right to do so and when doing so
 
 ## Security and Privacy Reporting
 
-Please do not include private meeting content, credentials, access tokens, or sensitive transcript data in public issues or pull requests.
+Please do not include private meeting content, Gemini API keys, credentials, access tokens, keyed build output, or sensitive transcript data in public issues or pull requests.
 
 Security and privacy concerns should be reported through the process in `SECURITY.md`.
 

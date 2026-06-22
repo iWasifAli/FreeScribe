@@ -77,6 +77,47 @@
         <ol id="transcriptList" class="transcript-list"></ol>
       </section>
 
+      <section class="ai-section" aria-label="AI meeting notes">
+        <div class="ai-header">
+          <div>
+            <span class="meta-label">Gemini</span>
+            <h2>AI meeting notes</h2>
+          </div>
+          <div class="ai-note-actions">
+            <button id="copyAiNotesButton" type="button" class="icon-button" aria-label="Copy AI meeting notes" title="Copy AI meeting notes" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <rect x="8" y="8" width="10" height="10" rx="2"></rect>
+                <path d="M6 14H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+            <button id="saveAiNotesButton" type="button" class="icon-button" aria-label="Save AI meeting notes" title="Save AI meeting notes" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 3v10"></path>
+                <path d="m8 9 4 4 4-4"></path>
+                <path d="M5 19h14"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <button id="generateAiNotesButton" type="button" class="ai-generate-button secondary-primary" disabled>Generate notes</button>
+        <p id="aiStatusText" class="ai-status-text" role="status">AI notes unavailable in this build.</p>
+        <div class="ai-tabs" role="tablist" aria-label="AI notes views">
+          <button id="aiTabSummary" type="button" class="ai-tab active" data-ai-tab="summary" role="tab" aria-selected="true" aria-controls="aiPanelSummary">Summary</button>
+          <button id="aiTabActions" type="button" class="ai-tab" data-ai-tab="actions" role="tab" aria-selected="false" aria-controls="aiPanelActions">Actions</button>
+          <button id="aiTabMom" type="button" class="ai-tab" data-ai-tab="mom" role="tab" aria-selected="false" aria-controls="aiPanelMom">MoM</button>
+        </div>
+        <div id="aiGeneratedMeta" class="ai-generated-meta">No AI notes generated yet.</div>
+        <div id="aiPanelSummary" class="ai-panel active" role="tabpanel" aria-labelledby="aiTabSummary">
+          <p id="aiSummaryText" class="ai-body-text">No AI notes generated yet.</p>
+        </div>
+        <div id="aiPanelActions" class="ai-panel" role="tabpanel" aria-labelledby="aiTabActions" hidden>
+          <ol id="aiActionItemsList" class="ai-action-list"></ol>
+        </div>
+        <div id="aiPanelMom" class="ai-panel" role="tabpanel" aria-labelledby="aiTabMom" hidden>
+          <div id="aiMomContent" class="ai-mom-content"></div>
+        </div>
+      </section>
+
       <section class="meta-grid" aria-label="Meeting metadata">
         <div class="meta-item">
           <span class="meta-label">Meeting</span>

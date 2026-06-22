@@ -41,28 +41,6 @@ namespace LMCL {
     return false;
   }
 
-  function commonPrefixWordCount(left: string, right: string): number {
-    const leftWords = normalizeForCaptionComparison(left).split(" ").filter(Boolean);
-    const rightWords = normalizeForCaptionComparison(right).split(" ").filter(Boolean);
-    const max = Math.min(leftWords.length, rightWords.length);
-    let count = 0;
-
-    while (count < max && leftWords[count] === rightWords[count]) {
-      count += 1;
-    }
-
-    return count;
-  }
-
-  function isLikelyProgressiveRewrite(previousText: string, nextText: string): boolean {
-    const previousWords = normalizeForCaptionComparison(previousText).split(" ").filter(Boolean);
-    const nextWords = normalizeForCaptionComparison(nextText).split(" ").filter(Boolean);
-    const prefixCount = commonPrefixWordCount(previousText, nextText);
-    const shorterLength = Math.min(previousWords.length, nextWords.length);
-
-    return prefixCount >= 5 && prefixCount / Math.max(1, shorterLength) >= 0.55;
-  }
-
   function findRecentUnknownDuplicateIndex(lines: TranscriptLine[], text: string, observedAt: number, windowMs: number): number {
     const comparableText = normalizeForCaptionComparison(text);
 
@@ -143,7 +121,8 @@ namespace LMCL {
           ...previousLine,
           speaker,
           updatedAt: observedAt,
-          revision: previousLine.revision + 1
+          revision: previousLine.revision + 1,
+          sourceNodeHash: candidate.sourceNodeHash || previousLine.sourceNodeHash
         };
 
         return {
@@ -177,15 +156,15 @@ namespace LMCL {
 
       if (
         text.startsWith(line.text) ||
-        comparableText.startsWith(comparableLineText) ||
-        isLikelyProgressiveRewrite(line.text, text)
+        comparableText.startsWith(comparableLineText)
       ) {
         const nextLines = lines.slice();
         nextLines[index] = {
           ...line,
           text,
           updatedAt: observedAt,
-          revision: line.revision + 1
+          revision: line.revision + 1,
+          sourceNodeHash: candidate.sourceNodeHash || line.sourceNodeHash
         };
 
         return {
@@ -207,7 +186,8 @@ namespace LMCL {
       text,
       startedAt: observedAt,
       updatedAt: observedAt,
-      revision: 0
+      revision: 0,
+      sourceNodeHash: candidate.sourceNodeHash
     };
 
     return {

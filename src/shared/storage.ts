@@ -18,12 +18,13 @@ namespace LMCL {
     const startedAt = typeof value.startedAt === "number" ? value.startedAt : 0;
     const updatedAt = typeof value.updatedAt === "number" ? value.updatedAt : startedAt;
     const revision = typeof value.revision === "number" ? value.revision : 0;
+    const sourceNodeHash = typeof value.sourceNodeHash === "string" ? value.sourceNodeHash : undefined;
 
     if (!id || !text || !startedAt) {
       return null;
     }
 
-    return { id, speaker, text, startedAt, updatedAt, revision };
+    return { id, speaker, text, startedAt, updatedAt, revision, sourceNodeHash };
   }
 
   function sanitizeSession(value: unknown): TranscriptSession | null {
@@ -52,31 +53,54 @@ namespace LMCL {
   export async function loadStoredState(): Promise<StoredState> {
     const result = await chrome.storage.local.get(STORAGE_KEY);
     const stored = result?.[STORAGE_KEY];
-    const empty: StoredState = { version: 1, sessionsByTabId: {}, updatedAt: Date.now() };
+    const empty: StoredState = {
+      version: 2,
+      sessionsByTabId: {},
+      sessionsByMeetingKey: {},
+      updatedAt: Date.now()
+    };
 
-    if (!isRecord(stored) || stored.version !== 1 || !isRecord(stored.sessionsByTabId)) {
+    if (!isRecord(stored)) {
       return empty;
     }
 
     const sessionsByTabId: Record<string, TranscriptSession> = {};
-    for (const [tabId, sessionValue] of Object.entries(stored.sessionsByTabId)) {
-      const session = sanitizeSession(sessionValue);
-      if (session) {
-        sessionsByTabId[tabId] = session;
+    const sessionsByMeetingKey: Record<string, TranscriptSession> = {};
+
+    if (isRecord(stored.sessionsByTabId)) {
+      for (const [tabId, sessionValue] of Object.entries(stored.sessionsByTabId)) {
+        const session = sanitizeSession(sessionValue);
+        if (session) {
+          sessionsByTabId[tabId] = session;
+        }
+      }
+    }
+
+    if (stored.version === 2 && isRecord(stored.sessionsByMeetingKey)) {
+      for (const [meetingKey, sessionValue] of Object.entries(stored.sessionsByMeetingKey)) {
+        const session = sanitizeSession(sessionValue);
+        if (session) {
+          sessionsByMeetingKey[meetingKey] = session;
+        }
       }
     }
 
     return {
-      version: 1,
+      version: 2,
       sessionsByTabId,
+      sessionsByMeetingKey,
       updatedAt: typeof stored.updatedAt === "number" ? stored.updatedAt : Date.now()
     };
   }
 
-  export async function saveStoredState(sessionsByTabId: Record<string, TranscriptSession>): Promise<void> {
+  export async function saveStoredState(
+    sessionsByTabId: Record<string, TranscriptSession>,
+    sessionsByMeetingKey: Record<string, TranscriptSession>
+  ): Promise<void> {
     const state: StoredState = {
-      version: 1,
+      version: 2,
       sessionsByTabId,
+      sessionsByMeetingKey,
       updatedAt: Date.now()
     };
 

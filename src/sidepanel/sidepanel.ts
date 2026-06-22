@@ -114,12 +114,31 @@ namespace LMCL {
       return;
     }
 
-    if (response?.ok && response.filename) {
-      setError(`Saved ${response.filename}`);
+    if (response?.ok && response.filename && typeof response.text === "string") {
+      await downloadTranscript(response.text, response.filename);
       return;
     }
 
     setError(response?.error?.message || "Command failed.");
+  }
+
+  async function downloadTranscript(text: string, filename: string): Promise<void> {
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+
+    try {
+      await chrome.downloads.download({
+        url,
+        filename,
+        saveAs: true,
+        conflictAction: "uniquify"
+      });
+      setError(`Saved ${filename}`);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Export failed.");
+    } finally {
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    }
   }
 
   function buttonState(status: RecordingStatus, supported: boolean, hasLines: boolean): void {
@@ -261,6 +280,12 @@ namespace LMCL {
       return;
     }
 
+    if (!state.canConnectToContentScript) {
+      elements.captionStatus.textContent = "Refresh required";
+      elements.latestCandidate.textContent = "Refresh the Google Meet tab so the extension can reconnect.";
+      return;
+    }
+
     if (state.captions.detected) {
       elements.captionStatus.textContent = "Captions detected";
     } else if (state.session.status === "RECORDING" || state.session.status === "PAUSED") {
@@ -285,7 +310,11 @@ namespace LMCL {
 
     elements.statusPill.textContent = status;
     elements.statusPill.className = `status-pill ${session.status.toLowerCase()}`;
-    elements.supportText.textContent = state.supported ? "Google Meet tab connected" : "Not on Google Meet";
+    elements.supportText.textContent = state.supported
+      ? state.canConnectToContentScript
+        ? "Google Meet tab ready"
+        : "Refresh the Meet tab to reconnect"
+      : "Not on Google Meet";
     elements.meetingTitle.textContent = session.meetingTitle || "Unknown";
     elements.meetingCode.textContent = session.meetingCode || "Unknown";
     elements.startedAt.textContent = session.startedAt ? formatLocalDateTime(session.startedAt) : "Not started";
@@ -351,8 +380,10 @@ namespace LMCL {
       return false;
     }
 
-    const state = message.payload as TabRuntimeState;
-    if (!currentState || currentState.tabId === state.tabId) {
+    const payload = message.payload as TabRuntimeState | { activeTabUpdate?: boolean; state?: TabRuntimeState };
+    const state = "state" in payload && payload.state ? payload.state : payload as TabRuntimeState;
+    const isActiveTabUpdate = "activeTabUpdate" in payload && payload.activeTabUpdate === true;
+    if (isActiveTabUpdate || !currentState || currentState.tabId === state.tabId) {
       render(state);
     }
 

@@ -10,6 +10,7 @@
     "src/shared/time.ts",
     "src/shared/slugify.ts",
     "src/shared/transcriptReducer.ts",
-    "src/shared/exportTranscript.ts"
+    "src/shared/exportTranscript.ts",
+    "src/content/meetCaptionExtractor.ts"
   ]
 }

@@ -6,15 +6,15 @@ The project is maintained as an open source Zolvat project. It was built at Zolv
 
 ## Overview
 
-ZolvatScribe is designed for teams that need a simple way to preserve meeting captions without introducing a recording service, cloud sync layer, bot participant, or AI processing pipeline. The extension runs in Chrome, watches the rendered Google Meet caption UI, stores transcript state locally, and lets the user download a `.txt` file on demand.
+ZolvatScribe is designed for teams that need a simple way to preserve meeting captions without introducing a recording service, cloud sync layer, bot participant, or AI processing pipeline. The extension runs in Chrome, watches the rendered Google Meet caption UI only during an active user-started capture session, stores transcript state locally, and lets the user download a `.txt` file on demand.
 
 The extension does not record audio, video, screen content, microphone input, camera input, chat messages, or Google account data. It only reads caption text that Google Meet has already rendered into the page after the user enables captions in the meeting.
 
 ## Features
 
 - Capture visible Google Meet captions from `https://meet.google.com/*`.
-- Start, pause, resume, stop, clear, and save transcript sessions from a Chrome side panel.
-- Keep transcript state in `chrome.storage.local` while the extension is running.
+- Start, pause, resume, stop, clear, copy, and save transcript sessions from a Chrome side panel.
+- Keep transcript state in `chrome.storage.local` until the user clears it or uninstalls the extension.
 - Export transcript output as a raw `.txt` file.
 - Include timestamps and speaker labels when Google Meet exposes them in the caption UI.
 - Deduplicate progressive caption updates so partial caption revisions collapse into cleaner transcript lines.
@@ -25,7 +25,9 @@ The extension does not record audio, video, screen content, microphone input, ca
 
 ZolvatScribe is intentionally local-only.
 
-Transcript state is stored in `chrome.storage.local`. A transcript file is written only when the user clicks **Save TXT**. The extension does not send transcript content to Zolvat, Google APIs, third-party APIs, AI services, or any other remote service.
+Transcript state is stored in `chrome.storage.local` and may persist across browser restarts until it is cleared by the user or removed with the extension. Caption text capture starts only after the user clicks **Start recording**. Capture is stopped when the user pauses, stops, or clears the session.
+
+A transcript file is written only when the user clicks **Save transcript**. The extension does not send transcript content to Zolvat, Google APIs, third-party APIs, AI services, or any other remote service.
 
 Requested Chrome permissions are limited to:
 
@@ -38,7 +40,7 @@ The extension does not request microphone, camera, desktop capture, tab capture,
 
 ## How It Works
 
-Google Meet captions are rendered into the meeting page after captions are enabled by the user. ZolvatScribe injects a content script on Google Meet pages, observes the caption DOM, normalizes caption text, and sends transcript events to the extension side panel.
+Google Meet captions are rendered into the meeting page after captions are enabled by the user. ZolvatScribe injects a content script on Google Meet pages, waits for the user to start capture, observes caption-like live regions in the DOM, normalizes caption text, and sends transcript events to the extension side panel.
 
 The side panel owns the user workflow and transcript state. It can start or pause capture, display the current transcript, clear local state, and ask Chrome to download the exported `.txt` file.
 
@@ -52,6 +54,8 @@ Because the extension depends on Google Meet's rendered caption UI, changes to G
 - A Google Meet session with captions enabled manually by the user
 
 ## Installation
+
+ZolvatScribe is currently intended for local installation from source. It is not currently packaged for Chrome Web Store distribution.
 
 Clone the repository and install dependencies:
 
@@ -78,9 +82,10 @@ Load the extension in Chrome:
 1. Join a Google Meet call at `https://meet.google.com/*`.
 2. Turn on Google Meet captions manually.
 3. Open the ZolvatScribe side panel.
-4. Click **Start**.
+4. Click **Start recording**.
 5. Use **Pause**, **Resume**, **Stop**, and **Clear** as needed.
-6. Click **Save TXT** to download the transcript.
+6. Use the copy button to copy the transcript when needed.
+7. Click **Save transcript** to download the transcript.
 
 Transcript lines are saved in this format:
 
@@ -128,12 +133,19 @@ Clean generated build output:
 npm run clean
 ```
 
+Create a versioned local-install ZIP in `release/`:
+
+```bash
+npm run package
+```
+
 `npm run build` compiles the background script, content script, and side panel script, then copies static extension assets into `dist`.
 
 ## Project Structure
 
 ```txt
 .
+├── assets/
 ├── manifest.json
 ├── package.json
 ├── scripts/
@@ -153,7 +165,7 @@ Key areas:
 - `src/background/` contains the Manifest V3 service worker.
 - `src/shared/` contains reusable transcript, storage, messaging, time, slugging, and export utilities.
 - `tests/` contains Node test coverage for transcript reduction, caption deduplication, filename slugging, and TXT export formatting.
-- `scripts/` contains build support scripts for cleaning and copying extension assets.
+- `scripts/` contains build support scripts for cleaning, copying extension assets, and packaging release ZIPs.
 
 ## Testing
 
@@ -170,6 +182,8 @@ The test suite currently covers:
 - Filename slug generation
 - Plain text transcript export formatting
 
+CI runs `npm ci`, `npm test`, `npm run build`, and `npm run package` for pushes and pull requests.
+
 Manual QA is still important because the most integration-sensitive behavior depends on Google Meet's live rendered caption DOM.
 
 ## Manual QA Checklist
@@ -181,13 +195,13 @@ Manual QA is still important because the most integration-sensitive behavior dep
 5. Open a Google Meet test call.
 6. Turn on captions manually.
 7. Open the ZolvatScribe side panel.
-8. Click **Start**.
+8. Click **Start recording**.
 9. Speak a short sentence and confirm a transcript line appears.
 10. Speak a longer sentence and confirm progressive updates collapse into one line.
 11. Click **Pause** and confirm new captions do not add transcript lines.
 12. Click **Resume** and confirm transcript capture continues.
 13. Click **Stop** and confirm the transcript remains visible.
-14. Click **Save TXT** and inspect the downloaded file.
+14. Click **Save transcript** and inspect the downloaded file.
 15. Refresh the Meet tab and confirm the extension handles reconnecting without crashing.
 16. Reload the extension and confirm autosaved state restores where practical.
 
@@ -216,7 +230,7 @@ localStorage.setItem("lmclDebug", "1")
 ## Known Limitations
 
 - Google Meet captions must be visible in the page before they can be captured.
-- Caption extraction depends on Google Meet's rendered DOM and may need updates if Meet changes its UI.
+- Caption extraction depends on Google Meet's rendered caption DOM and may need updates if Meet changes its UI.
 - Speaker names depend on what Google Meet exposes in the caption UI.
 - Progressive captions are deduplicated heuristically, so imperfect transcript lines are possible.
 - The extension does not capture Google Meet chat messages.
@@ -227,7 +241,13 @@ Only capture meeting captions when you have the right to do so and when doing so
 
 ## Security and Privacy Reporting
 
-Please do not include private meeting content, credentials, access tokens, or sensitive transcript data in public issues or pull requests. If you need to report a privacy or security concern, use the responsible reporting channel published by the maintaining organization.
+Please do not include private meeting content, credentials, access tokens, or sensitive transcript data in public issues or pull requests.
+
+Security and privacy concerns should be reported through the process in `SECURITY.md`.
+
+## Contributing
+
+Contribution guidelines are documented in `CONTRIBUTING.md`. By contributing, you agree that your contribution is licensed under the Apache License 2.0.
 
 ## Maintainers
 
@@ -237,4 +257,4 @@ Built at Zolvat by Wasif Ali.
 
 ## License
 
-No license file is currently included in this repository. Add an explicit open source license before distributing or accepting external contributions under open source terms.
+ZolvatScribe is licensed under the Apache License 2.0. See `LICENSE`.

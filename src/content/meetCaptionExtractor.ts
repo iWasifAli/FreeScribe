@@ -99,6 +99,10 @@ namespace LMCL {
     return interactiveChildCount === 0;
   }
 
+  function hasCaptionSpecificAnchor(element: HTMLElement): boolean {
+    return Boolean(element.closest("[aria-label*='caption' i],[data-testid*='caption' i]"));
+  }
+
   function scoreNode(element: HTMLElement, rawText: string): number {
     const rect = element.getBoundingClientRect();
     let score = 0;
@@ -134,9 +138,7 @@ namespace LMCL {
       "[role='log']",
       "[role='status']",
       "[aria-label*='caption' i]",
-      "[data-testid*='caption' i]",
-      "div",
-      "span"
+      "[data-testid*='caption' i]"
     ];
     const elements = Array.from(root.querySelectorAll<HTMLElement>(selectors.join(","))).slice(-MAX_CANDIDATE_NODES);
     const scored: ScoredCaptionNode[] = [];
@@ -200,6 +202,16 @@ namespace LMCL {
     return parts;
   }
 
+  function hasLatinSpeakerCasing(text: string): boolean {
+    const words = text.split(/\s+/);
+    const latinWords = words.filter((word) => /\p{Script=Latin}/u.test(word));
+    if (latinWords.length === 0 || text.includes("@")) {
+      return true;
+    }
+
+    return latinWords.some((word) => /^[A-ZÀ-ÖØ-Þ]/u.test(word));
+  }
+
   function isPlausibleSpeakerName(value: string): boolean {
     const text = inlineText(value).replace(/:$/, "");
     if (!text || text.length > 64 || text.length < 2) {
@@ -215,17 +227,8 @@ namespace LMCL {
       return false;
     }
 
-    const latinWords = text.match(/\p{Script=Latin}[\p{Script=Latin}'-]*/gu) || [];
-    if (latinWords.length > 0) {
-      const capitalizedWords = latinWords.filter((word) => /^[A-ZÀ-ÖØ-Þ]/.test(word) || /^[A-Z]{2,}$/.test(word));
-      const capitalizationRatio = capitalizedWords.length / latinWords.length;
-      if (capitalizationRatio < 0.6) {
-        return false;
-      }
-    }
-
     const lowered = text.toLowerCase();
-    return !["captions", "transcript", "google meet", "you", "unknown"].includes(lowered);
+    return !["captions", "transcript", "google meet", "you", "unknown"].includes(lowered) && hasLatinSpeakerCasing(text);
   }
 
   function parsePartsIntoSegments(parts: string[]): { speaker: string | null; text: string }[] {
@@ -239,7 +242,7 @@ namespace LMCL {
         continue;
       }
 
-      if (isPlausibleSpeakerName(cleanedPart)) {
+      if (isPlausibleSpeakerName(cleanedPart) && (!currentSpeaker || buffer.length > 0)) {
         if (currentSpeaker && buffer.length > 0) {
           const text = inlineText(buffer.join(" "));
           if (text && !isLikelyControlText(text)) {
@@ -313,6 +316,30 @@ namespace LMCL {
     return (hash >>> 0).toString(36);
   }
 
+  function sourceHashForSegment(
+    element: HTMLElement,
+    segment: { speaker: string | null; text: string },
+    segmentIndex: number
+  ): string {
+    const rect = element.getBoundingClientRect();
+    const stableParts = [
+      element.tagName,
+      element.getAttribute("role") || "",
+      element.getAttribute("aria-live") || "",
+      element.getAttribute("aria-label") || "",
+      element.getAttribute("data-testid") || "",
+      Math.round(rect.top / 10),
+      Math.round(rect.left / 10),
+      Math.round(rect.width / 10),
+      Math.round(rect.height / 10),
+      segmentIndex,
+      normalizeForCaptionComparison(segment.speaker),
+      normalizeForCaptionComparison(segment.text)
+    ];
+
+    return hashText(stableParts.join(":"));
+  }
+
   function removeFragmentCandidates(candidates: CaptionCandidate[]): CaptionCandidate[] {
     const speakerNames = new Set<string>();
     const speakeredTexts = new Set<string>();
@@ -353,7 +380,12 @@ namespace LMCL {
 
     for (const scoredNode of scoredNodes) {
       const parsedSegments = parseRawCaption(scoredNode.element, scoredNode.rawText);
-      for (const parsed of parsedSegments) {
+      for (let segmentIndex = 0; segmentIndex < parsedSegments.length; segmentIndex += 1) {
+        const parsed = parsedSegments[segmentIndex];
+        if (!parsed.speaker && !hasCaptionSpecificAnchor(scoredNode.element)) {
+          continue;
+        }
+
         if (!inlineText(parsed.text) || shouldIgnoreCaptionText(parsed.speaker, parsed.text)) {
           continue;
         }
@@ -371,7 +403,7 @@ namespace LMCL {
           text,
           observedAt,
           rawText: scoredNode.rawText,
-          sourceNodeHash: hashText(`${scoredNode.element.tagName}:${speaker || ""}:${text}`)
+          sourceNodeHash: sourceHashForSegment(scoredNode.element, { speaker, text }, segmentIndex)
         });
       }
     }

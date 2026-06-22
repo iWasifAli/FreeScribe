@@ -8,6 +8,7 @@ namespace LMCL {
   let observer: MutationObserver | null = null;
   let lastDetectionState: boolean | null = null;
   let lastDetectionSentAt = 0;
+  let captureRequested = false;
 
   function candidateKey(candidate: CaptionCandidate): string {
     return `${candidate.speaker || ""}\n${candidate.text}`;
@@ -77,9 +78,11 @@ namespace LMCL {
     }, EXTRACTION_DEBOUNCE_MS);
   }
 
-  function startObserver(): void {
+  function startObserver(): boolean {
+    captureRequested = true;
+
     if (!document.body || observer) {
-      return;
+      return Boolean(observer);
     }
 
     observer = new MutationObserver(scheduleExtraction);
@@ -91,9 +94,54 @@ namespace LMCL {
 
     scheduleExtraction();
     debugLog("content script ready");
+    return true;
+  }
+
+  function stopObserver(): void {
+    captureRequested = false;
+
+    if (extractionTimer) {
+      clearTimeout(extractionTimer);
+      extractionTimer = null;
+    }
+
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
+
+    recentCandidateKeys.clear();
+    lastDetectionState = null;
+    lastDetectionSentAt = 0;
+  }
+
+  function startWhenReady(): boolean {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => {
+        if (captureRequested) {
+          startObserver();
+        }
+      }, { once: true });
+      captureRequested = true;
+      return true;
+    }
+
+    return startObserver();
   }
 
   chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender: unknown, sendResponse: (response: unknown) => void) => {
+    if (message.type === MessageType.START_CAPTURE) {
+      const started = startWhenReady();
+      sendResponse({ ok: started, metadata: getPageMetadata() });
+      return false;
+    }
+
+    if (message.type === MessageType.STOP_CAPTURE) {
+      stopObserver();
+      sendResponse({ ok: true });
+      return false;
+    }
+
     if (message.type === MessageType.GET_PAGE_METADATA) {
       sendResponse({ ok: true, metadata: getPageMetadata() });
       return false;
@@ -101,10 +149,5 @@ namespace LMCL {
 
     return false;
   });
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", startObserver, { once: true });
-  } else {
-    startObserver();
-  }
+  debugLog("content script listener ready");
 }

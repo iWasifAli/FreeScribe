@@ -584,6 +584,32 @@ test("ignores unknown fragments that duplicate a recent speaker or caption text"
   assert.equal(afterTextFragment.lines[0].speaker, "Wasif Ali");
 });
 
+test("ignores short unknown word fragments from a recent speakered caption", async () => {
+  const LMCL = await loadLmcl();
+  const first = LMCL.applyCaptionCandidate(
+    baseSession(),
+    candidate({
+      speaker: "Wasif Ali",
+      text: "Testing the caption capture from Meet",
+      observedAt: 1_820_000_001_000
+    }),
+    reducerOptions
+  );
+  const next = LMCL.applyCaptionCandidate(
+    first,
+    candidate({
+      speaker: null,
+      text: "caption",
+      observedAt: 1_820_000_001_200
+    }),
+    reducerOptions
+  );
+
+  assert.equal(next, first);
+  assert.equal(next.lines.length, 1);
+  assert.equal(next.lines[0].text, "Testing the caption capture from Meet");
+});
+
 test("replaces a recent unknown duplicate with the real speaker when the full candidate arrives second", async () => {
   const LMCL = await loadLmcl();
   const first = LMCL.applyCaptionCandidate(
@@ -607,6 +633,35 @@ test("replaces a recent unknown duplicate with the real speaker when the full ca
 
   assert.equal(next.lines.length, 1);
   assert.equal(next.lines[0].speaker, "Wasif Ali");
+  assert.equal(next.lines[0].revision, 1);
+});
+
+test("replaces recent unknown word fragments when the full speakered caption arrives", async () => {
+  const LMCL = await loadLmcl();
+  const first = LMCL.applyCaptionCandidate(
+    baseSession(),
+    candidate({
+      speaker: null,
+      text: "caption",
+      observedAt: 1_820_000_001_000
+    }),
+    reducerOptions
+  );
+  const next = LMCL.applyCaptionCandidate(
+    first,
+    candidate({
+      speaker: "Wasif Ali",
+      text: "Testing the caption capture from Meet",
+      observedAt: 1_820_000_001_200
+    }),
+    reducerOptions
+  );
+
+  assert.equal(next.lines.length, 1);
+  assert.equal(next.lines[0].speaker, "Wasif Ali");
+  assert.equal(next.lines[0].text, "Testing the caption capture from Meet");
+  assert.equal(next.lines[0].startedAt, 1_820_000_001_000);
+  assert.equal(next.lines[0].updatedAt, 1_820_000_001_200);
   assert.equal(next.lines[0].revision, 1);
 });
 

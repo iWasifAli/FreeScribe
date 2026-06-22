@@ -346,6 +346,99 @@ namespace LMCL {
     return -1;
   }
 
+  function containsWordSequence(words: string[], sequence: string[]): boolean {
+    if (sequence.length === 0 || words.length <= sequence.length) {
+      return false;
+    }
+
+    for (let start = 0; start <= words.length - sequence.length; start += 1) {
+      let matches = true;
+      for (let offset = 0; offset < sequence.length; offset += 1) {
+        if (words[start + offset] !== sequence[offset]) {
+          matches = false;
+          break;
+        }
+      }
+
+      if (matches) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  function isShortTextFragmentOfText(fragmentText: string, fullText: string): boolean {
+    const fragmentWords = duplicateComparisonText(UNKNOWN_SPEAKER, fragmentText).split(" ").filter(Boolean);
+    if (fragmentWords.length === 0 || fragmentWords.length > 4) {
+      return false;
+    }
+
+    const fullWords = duplicateComparisonText(UNKNOWN_SPEAKER, fullText).split(" ").filter(Boolean);
+    return containsWordSequence(fullWords, fragmentWords);
+  }
+
+  function isShortFragmentOfLine(line: TranscriptLine, text: string): boolean {
+    return isShortTextFragmentOfText(text, line.text);
+  }
+
+  function findRecentUnknownFragmentIndices(lines: TranscriptLine[], text: string, observedAt: number, windowMs: number): number[] {
+    const textWords = duplicateComparisonText(UNKNOWN_SPEAKER, text).split(" ").filter(Boolean);
+    if (textWords.length <= 1) {
+      return [];
+    }
+
+    const indices: number[] = [];
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const line = lines[index];
+      if (observedAt - line.updatedAt > windowMs) {
+        break;
+      }
+
+      if (line.speaker === UNKNOWN_SPEAKER && isShortTextFragmentOfText(line.text, text)) {
+        indices.push(index);
+      }
+    }
+
+    return indices.sort((left, right) => left - right);
+  }
+
+  function replaceUnknownFragmentsWithSpeakeredCaption(
+    session: TranscriptSession,
+    indices: number[],
+    candidate: CaptionCandidate,
+    speaker: string,
+    text: string,
+    observedAt: number
+  ): TranscriptSession {
+    const indexSet = new Set(indices);
+    const canonicalIndex = indices[0];
+    const canonicalLine = session.lines[canonicalIndex];
+    const nextLines = session.lines
+      .map((line, index) => {
+        if (index !== canonicalIndex) {
+          return line;
+        }
+
+        return {
+          ...line,
+          speaker,
+          text,
+          startedAt: Math.min(line.startedAt, observedAt),
+          updatedAt: observedAt,
+          revision: line.revision + 1,
+          sourceNodeHash: candidate.sourceNodeHash || line.sourceNodeHash
+        };
+      })
+      .filter((_line, index) => index === canonicalIndex || !indexSet.has(index));
+
+    return {
+      ...session,
+      lines: nextLines,
+      lastCapturedAt: Math.max(observedAt, canonicalLine.updatedAt)
+    };
+  }
+
   function isUnknownSpeakerFragment(lines: TranscriptLine[], text: string, observedAt: number, windowMs: number): boolean {
     const comparableText = duplicateComparisonText(UNKNOWN_SPEAKER, text);
 
@@ -361,6 +454,10 @@ namespace LMCL {
 
       if (line.speaker === UNKNOWN_SPEAKER && hasCleanerCandidateText(line, text)) {
         return false;
+      }
+
+      if (line.speaker !== UNKNOWN_SPEAKER && isShortFragmentOfLine(line, text)) {
+        return true;
       }
 
       if (
@@ -426,6 +523,11 @@ namespace LMCL {
           lines: nextLines,
           lastCapturedAt: observedAt
         };
+      }
+
+      const unknownFragmentIndices = findRecentUnknownFragmentIndices(lines, text, observedAt, candidateDuplicateWindowMs);
+      if (unknownFragmentIndices.length > 0) {
+        return replaceUnknownFragmentsWithSpeakeredCaption(session, unknownFragmentIndices, candidate, speaker, text, observedAt);
       }
     }
 

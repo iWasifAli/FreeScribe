@@ -404,6 +404,7 @@ namespace LMCL {
   function removeFragmentCandidates(candidates: CaptionCandidate[]): CaptionCandidate[] {
     const speakerNames = new Set<string>();
     const speakeredTexts = new Set<string>();
+    const speakeredTextWords: string[][] = [];
 
     for (const candidate of candidates) {
       if (!candidate.speaker) {
@@ -411,7 +412,11 @@ namespace LMCL {
       }
 
       speakerNames.add(normalizeForCaptionComparison(candidate.speaker));
-      speakeredTexts.add(normalizeForCaptionComparison(candidate.text));
+      const comparableText = normalizeForCaptionComparison(candidate.text);
+      speakeredTexts.add(comparableText);
+      if (comparableText) {
+        speakeredTextWords.push(comparableText.split(" "));
+      }
     }
 
     return candidates.filter((candidate) => {
@@ -430,8 +435,39 @@ namespace LMCL {
         return false;
       }
 
-      return !speakerNames.has(comparableText) && !speakeredTexts.has(comparableText);
+      if (speakerNames.has(comparableText) || speakeredTexts.has(comparableText)) {
+        return false;
+      }
+
+      const candidateWords = comparableText ? comparableText.split(" ") : [];
+      if (candidateWords.length > 0 && candidateWords.length <= 4) {
+        return !speakeredTextWords.some((words) => containsWordSequence(words, candidateWords));
+      }
+
+      return true;
     });
+  }
+
+  function containsWordSequence(words: string[], sequence: string[]): boolean {
+    if (sequence.length === 0 || words.length <= sequence.length) {
+      return false;
+    }
+
+    for (let start = 0; start <= words.length - sequence.length; start += 1) {
+      let matches = true;
+      for (let offset = 0; offset < sequence.length; offset += 1) {
+        if (words[start + offset] !== sequence[offset]) {
+          matches = false;
+          break;
+        }
+      }
+
+      if (matches) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   export function extractCaptionCandidates(root: Document = document, observedAt: number = Date.now()): CaptionCandidate[] {

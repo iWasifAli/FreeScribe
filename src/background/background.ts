@@ -101,6 +101,10 @@ namespace LMCL {
     return isMeetingStoreSupported();
   }
 
+  function isRecoverableFileAutosaveState(status: FileAutosaveStatus): boolean {
+    return status === "saved" || status === "dirty";
+  }
+
   function getFileAutosaveState(session: TranscriptSession): FileAutosaveRuntimeState {
     if (!session.sessionId) {
       return createEmptyFileAutosaveRuntimeState(isFileAutosaveSupportedInBackground());
@@ -356,9 +360,24 @@ namespace LMCL {
     }
 
     const now = Date.now();
+    const currentState = fileAutosaveRuntimeFromLink(linkedFile, isFileAutosaveSupportedInBackground());
+    if (currentState.status === "paused" || currentState.status === "error") {
+      fileAutosaveStateBySessionId[session.sessionId] = currentState;
+      await broadcastTabState(tabId);
+      return;
+    }
+
     if (!shouldFlushLinkedTranscriptFile(session, linkedFile, { now, force })) {
-      const state = fileAutosaveRuntimeFromLink(linkedFile, isFileAutosaveSupportedInBackground(), "dirty");
-      fileAutosaveStateBySessionId[session.sessionId] = state;
+      if (!hasLinkedTranscriptChanged(session, linkedFile)) {
+        fileAutosaveStateBySessionId[session.sessionId] = currentState;
+        await broadcastTabState(tabId);
+        return;
+      }
+
+      fileAutosaveStateBySessionId[session.sessionId] = {
+        ...currentState,
+        status: "dirty"
+      };
       const delay = Math.max(500, FILE_AUTOSAVE_INTERVAL_MS - (now - (linkedFile.lastWriteAt ?? now)));
       fileAutosaveTimerBySessionId[session.sessionId] = setTimeout(() => {
         void flushLinkedFileAutosaveForSession(tabId, getSession(tabId), false);
@@ -389,14 +408,13 @@ namespace LMCL {
     }
 
     const existingState = getFileAutosaveState(session);
-    if (existingState.status === "unsupported" || existingState.status === "unlinked") {
+    if (!isRecoverableFileAutosaveState(existingState.status)) {
       return;
     }
 
     fileAutosaveStateBySessionId[session.sessionId] = {
       ...existingState,
-      status: "dirty",
-      error: null
+      status: "dirty"
     };
 
     if (fileAutosaveTimerBySessionId[session.sessionId]) {
@@ -865,15 +883,13 @@ namespace LMCL {
   async function listMeetingLibrary(search: string): Promise<MeetingLibraryResult> {
     const records = await getAllMeetingRecords();
     const result = queryMeetingRecords(records, { search, limit: DEFAULT_MEETING_LIBRARY_LIMIT });
-    const summaries: MeetingSummary[] = [];
-
-    for (const summary of result.summaries) {
+    const summaries = await Promise.all(result.summaries.map(async (summary) => {
       const linkedFile = await getLinkedTranscriptFile(summary.sessionId);
-      summaries.push({
+      return {
         ...summary,
         fileAutosave: fileAutosaveRuntimeFromLink(linkedFile, isFileAutosaveSupportedInBackground())
-      });
-    }
+      };
+    }));
 
     return {
       ...result,

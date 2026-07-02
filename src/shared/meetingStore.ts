@@ -69,6 +69,7 @@ namespace LMCL {
           reject(request.error || new Error("Unable to open meeting library storage."));
         };
         request.onblocked = () => {
+          meetingDbPromise = null;
           reject(new Error("Meeting library storage upgrade is blocked by another FreeScribe page."));
         };
       });

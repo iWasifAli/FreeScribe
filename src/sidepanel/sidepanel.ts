@@ -3,6 +3,9 @@ namespace LMCL {
     supportText: HTMLElement;
     statusPill: HTMLElement;
     themeToggle: HTMLButtonElement;
+    liveViewButton: HTMLButtonElement;
+    libraryViewButton: HTMLButtonElement;
+    libraryView: HTMLElement;
     meetingTitle: HTMLElement;
     meetingCode: HTMLElement;
     startedAt: HTMLElement;
@@ -12,6 +15,8 @@ namespace LMCL {
     stopButton: HTMLButtonElement;
     clearButton: HTMLButtonElement;
     saveButton: HTMLButtonElement;
+    fileAutosaveButton: HTMLButtonElement;
+    fileAutosaveFlushButton: HTMLButtonElement;
     copyButton: HTMLButtonElement;
     aiSection: HTMLElement;
     generateAiNotesButton: HTMLButtonElement;
@@ -39,9 +44,30 @@ namespace LMCL {
     autosaveStatus: HTMLElement;
     lastCapturedAt: HTMLElement;
     errorText: HTMLElement;
+    refreshLibraryButton: HTMLButtonElement;
+    librarySearchInput: HTMLInputElement;
+    libraryList: HTMLOListElement;
+    libraryDetail: HTMLElement;
+    closeLibraryDetailButton: HTMLButtonElement;
+    libraryDetailTitle: HTMLElement;
+    libraryDetailMeta: HTMLElement;
+    restoreLibraryButton: HTMLButtonElement;
+    copyLibraryTranscriptButton: HTMLButtonElement;
+    saveLibraryTranscriptButton: HTMLButtonElement;
+    copyLibraryAiNotesButton: HTMLButtonElement;
+    saveLibraryAiNotesButton: HTMLButtonElement;
+    deleteLibraryMeetingButton: HTMLButtonElement;
+    libraryDetailLineCount: HTMLElement;
+    libraryTranscriptList: HTMLOListElement;
+    libraryAiMeta: HTMLElement;
+    libraryAiContent: HTMLElement;
   }
 
   let currentState: TabRuntimeState | null = null;
+  let currentView: "live" | "library" = "live";
+  let currentLibrary: MeetingLibraryResult | null = null;
+  let selectedLibraryRecord: MeetingRecord | null = null;
+  let librarySearchTimer: number | undefined;
   let copyFeedbackTimer: number | undefined;
   let aiCopyFeedbackTimer: number | undefined;
   type AiTab = "summary" | "actions" | "mom";
@@ -62,6 +88,9 @@ namespace LMCL {
     supportText: mustGetElement("supportText"),
     statusPill: mustGetElement("statusPill"),
     themeToggle: mustGetElement("themeToggle"),
+    liveViewButton: mustGetElement("liveViewButton"),
+    libraryViewButton: mustGetElement("libraryViewButton"),
+    libraryView: mustGetElement("libraryView"),
     meetingTitle: mustGetElement("meetingTitle"),
     meetingCode: mustGetElement("meetingCode"),
     startedAt: mustGetElement("startedAt"),
@@ -71,6 +100,8 @@ namespace LMCL {
     stopButton: mustGetElement("stopButton"),
     clearButton: mustGetElement("clearButton"),
     saveButton: mustGetElement("saveButton"),
+    fileAutosaveButton: mustGetElement("fileAutosaveButton"),
+    fileAutosaveFlushButton: mustGetElement("fileAutosaveFlushButton"),
     copyButton: mustGetElement("copyButton"),
     aiSection: mustGetElement("aiSection"),
     generateAiNotesButton: mustGetElement("generateAiNotesButton"),
@@ -97,7 +128,24 @@ namespace LMCL {
     lineCount: mustGetElement("lineCount"),
     autosaveStatus: mustGetElement("autosaveStatus"),
     lastCapturedAt: mustGetElement("lastCapturedAt"),
-    errorText: mustGetElement("errorText")
+    errorText: mustGetElement("errorText"),
+    refreshLibraryButton: mustGetElement("refreshLibraryButton"),
+    librarySearchInput: mustGetElement("librarySearchInput"),
+    libraryList: mustGetElement("libraryList"),
+    libraryDetail: mustGetElement("libraryDetail"),
+    closeLibraryDetailButton: mustGetElement("closeLibraryDetailButton"),
+    libraryDetailTitle: mustGetElement("libraryDetailTitle"),
+    libraryDetailMeta: mustGetElement("libraryDetailMeta"),
+    restoreLibraryButton: mustGetElement("restoreLibraryButton"),
+    copyLibraryTranscriptButton: mustGetElement("copyLibraryTranscriptButton"),
+    saveLibraryTranscriptButton: mustGetElement("saveLibraryTranscriptButton"),
+    copyLibraryAiNotesButton: mustGetElement("copyLibraryAiNotesButton"),
+    saveLibraryAiNotesButton: mustGetElement("saveLibraryAiNotesButton"),
+    deleteLibraryMeetingButton: mustGetElement("deleteLibraryMeetingButton"),
+    libraryDetailLineCount: mustGetElement("libraryDetailLineCount"),
+    libraryTranscriptList: mustGetElement("libraryTranscriptList"),
+    libraryAiMeta: mustGetElement("libraryAiMeta"),
+    libraryAiContent: mustGetElement("libraryAiContent")
   };
 
   function isThemeMode(value: string | null): value is ThemeMode {
@@ -173,6 +221,23 @@ namespace LMCL {
 
   function setVisible(element: HTMLElement, visible: boolean): void {
     element.hidden = !visible;
+  }
+
+  function setView(view: "live" | "library"): void {
+    currentView = view;
+    const libraryActive = view === "library";
+    document.querySelectorAll<HTMLElement>("[data-live-view]").forEach((element) => {
+      element.hidden = libraryActive;
+    });
+    elements.libraryView.hidden = !libraryActive;
+    elements.liveViewButton.classList.toggle("active", !libraryActive);
+    elements.libraryViewButton.classList.toggle("active", libraryActive);
+    elements.liveViewButton.setAttribute("aria-pressed", libraryActive ? "false" : "true");
+    elements.libraryViewButton.setAttribute("aria-pressed", libraryActive ? "true" : "false");
+
+    if (libraryActive) {
+      void refreshLibrary();
+    }
   }
 
   function setAiStatus(message: string, visible: boolean): void {
@@ -259,7 +324,42 @@ namespace LMCL {
     }
   }
 
-  function buttonState(status: RecordingStatus, supported: boolean, hasLines: boolean): void {
+  function renderFileAutosaveControls(state: TabRuntimeState): void {
+    const fileState = state.fileAutosave;
+    const fileAutosaveSupported = fileState.supported && isFilePickerSupported();
+    const hasSession = Boolean(state.session.sessionId);
+    const linked = fileState.status !== "unsupported" && fileState.status !== "unlinked";
+    elements.fileAutosaveButton.disabled = !hasSession || !fileAutosaveSupported || fileState.status === "saving";
+    elements.fileAutosaveFlushButton.disabled = !hasSession || !linked || !fileAutosaveSupported || fileState.status === "saving";
+
+    if (!fileAutosaveSupported) {
+      setButtonLabel(elements.fileAutosaveButton, "Autosave unavailable");
+      elements.fileAutosaveButton.title = fileState.error || "File autosave is not supported in this browser.";
+    } else if (!hasSession) {
+      setButtonLabel(elements.fileAutosaveButton, "Link autosave file");
+      elements.fileAutosaveButton.title = "Start recording before linking an autosave file.";
+    } else if (fileState.status === "unlinked") {
+      setButtonLabel(elements.fileAutosaveButton, "Link autosave file");
+      elements.fileAutosaveButton.title = "Choose a text file FreeScribe can keep updated.";
+    } else if (fileState.status === "paused") {
+      setButtonLabel(elements.fileAutosaveButton, "Reconnect file");
+      elements.fileAutosaveButton.title = fileState.error || "Reconnect permission for the linked transcript file.";
+    } else if (fileState.status === "error") {
+      setButtonLabel(elements.fileAutosaveButton, "Fix autosave file");
+      elements.fileAutosaveButton.title = fileState.error || "File autosave failed.";
+    } else {
+      setButtonLabel(elements.fileAutosaveButton, fileState.status === "dirty" ? "Autosave pending" : "Autosave linked");
+      elements.fileAutosaveButton.title = fileState.fileName
+        ? `Linked file: ${fileState.fileName}`
+        : "Transcript file autosave is linked.";
+    }
+
+    elements.fileAutosaveFlushButton.title = linked
+      ? "Write the latest transcript to the linked file now."
+      : "Link a transcript file before flushing autosave.";
+  }
+
+  function buttonState(status: RecordingStatus, supported: boolean, hasLines: boolean, state: TabRuntimeState): void {
     elements.startButton.disabled = status === "RECORDING" || status === "PAUSED";
     elements.pauseButton.disabled = status !== "RECORDING";
     elements.resumeButton.disabled = status !== "PAUSED";
@@ -288,6 +388,7 @@ namespace LMCL {
     elements.clearButton.title = elements.clearButton.disabled ? "Nothing to clear yet." : "Clear the current transcript.";
     elements.saveButton.title = elements.saveButton.disabled ? "No transcript lines to save yet." : "Save the transcript as a text file.";
     elements.copyButton.title = elements.copyButton.disabled ? "No transcript lines to copy yet." : "Copy transcript.";
+    renderFileAutosaveControls(state);
   }
 
   function copyTextWithFallback(text: string): boolean {
@@ -347,6 +448,17 @@ namespace LMCL {
     }, 900);
   }
 
+  async function writeClipboardText(text: string): Promise<void> {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    if (!copyTextWithFallback(text)) {
+      throw new Error("Clipboard API is unavailable.");
+    }
+  }
+
   async function copyTranscript(): Promise<void> {
     if (!currentState?.session.lines.length) {
       setError("No transcript lines to copy yet.");
@@ -356,12 +468,7 @@ namespace LMCL {
     const text = formatTranscriptAsTxt(currentState.session);
 
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else if (!copyTextWithFallback(text)) {
-        throw new Error("Clipboard API is unavailable.");
-      }
-
+      await writeClipboardText(text);
       setError("Copied transcript");
       showCopyFeedback();
     } catch (error) {
@@ -378,12 +485,7 @@ namespace LMCL {
     const text = formatMeetingArtifactsAsMarkdown(currentState.session);
 
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else if (!copyTextWithFallback(text)) {
-        throw new Error("Clipboard API is unavailable.");
-      }
-
+      await writeClipboardText(text);
       setError("Copied AI meeting notes");
       showAiCopyFeedback();
     } catch (error) {
@@ -391,8 +493,12 @@ namespace LMCL {
     }
   }
 
-  function renderTranscript(lines: TranscriptLine[]): void {
-    const shouldScroll = elements.autoScrollToggle.checked;
+  function renderTranscriptLines(
+    target: HTMLOListElement,
+    lines: TranscriptLine[],
+    emptyTitleText: string,
+    emptyMessageText: string
+  ): void {
     const fragment = document.createDocumentFragment();
 
     if (lines.length === 0) {
@@ -404,13 +510,11 @@ namespace LMCL {
 
       const title = document.createElement("strong");
       title.className = "empty-title";
-      title.textContent = currentState?.session.status === "PAUSED" ? "Recording paused" : "No transcript yet";
+      title.textContent = emptyTitleText;
 
       const message = document.createElement("span");
       message.className = "empty-message";
-      message.textContent = currentState?.session.status === "PAUSED"
-        ? "New captions are visible, but FreeScribe is not saving them until you resume."
-        : "Open a Google Meet tab, turn on captions, then click Start recording.";
+      message.textContent = emptyMessageText;
 
       empty.append(icon, title, message);
       fragment.appendChild(empty);
@@ -440,7 +544,19 @@ namespace LMCL {
       }
     }
 
-    elements.transcriptList.replaceChildren(fragment);
+    target.replaceChildren(fragment);
+  }
+
+  function renderTranscript(lines: TranscriptLine[]): void {
+    const shouldScroll = elements.autoScrollToggle.checked;
+    renderTranscriptLines(
+      elements.transcriptList,
+      lines,
+      currentState?.session.status === "PAUSED" ? "Recording paused" : "No transcript yet",
+      currentState?.session.status === "PAUSED"
+        ? "New captions are visible, but FreeScribe is not saving them until you resume."
+        : "Open a Google Meet tab, turn on captions, then click Start recording."
+    );
 
     if (shouldScroll) {
       elements.transcriptList.scrollTop = elements.transcriptList.scrollHeight;
@@ -730,6 +846,350 @@ namespace LMCL {
     setAiTab(currentAiTab);
   }
 
+  function libraryTitle(summary: MeetingSummary | TranscriptSession): string {
+    return summary.meetingTitle || summary.meetingCode || "Untitled meeting";
+  }
+
+  function libraryMetaForSummary(summary: MeetingSummary): string {
+    const dateLabel = summary.startedAt ? formatLocalDateTime(summary.startedAt) : "Not started";
+    const status = statusLabel(summary.status);
+    const notes = summary.hasAiArtifacts ? "AI notes" : "No AI notes";
+    return `${dateLabel} | ${status} | ${notes}`;
+  }
+
+  function renderLibraryEmpty(message: string): void {
+    const empty = document.createElement("li");
+    empty.className = "empty-row";
+    const icon = document.createElement("span");
+    icon.className = "empty-icon";
+    icon.appendChild(createIcon("fa-regular fa-folder-open"));
+    const title = document.createElement("strong");
+    title.className = "empty-title";
+    title.textContent = "No meetings";
+    const body = document.createElement("span");
+    body.className = "empty-message";
+    body.textContent = message;
+    empty.append(icon, title, body);
+    elements.libraryList.replaceChildren(empty);
+  }
+
+  function renderLibraryList(result: MeetingLibraryResult): void {
+    currentLibrary = result;
+
+    if (result.summaries.length === 0) {
+      renderLibraryEmpty(result.query.search ? "No saved meetings match this search." : "Recorded meetings will appear here.");
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    for (const summary of result.summaries) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = `library-row${selectedLibraryRecord?.sessionId === summary.sessionId ? " active" : ""}`;
+      row.addEventListener("click", () => void openLibraryRecord(summary.sessionId));
+
+      const main = document.createElement("span");
+      main.className = "library-row-main";
+      const title = document.createElement("span");
+      title.className = "library-row-title";
+      title.textContent = libraryTitle(summary);
+      const meta = document.createElement("span");
+      meta.className = "library-row-meta";
+      meta.textContent = libraryMetaForSummary(summary);
+      main.append(title, meta);
+
+      const count = document.createElement("span");
+      count.className = "library-row-count";
+      count.textContent = formatLineCount(summary.lineCount);
+
+      row.append(main, count);
+      const item = document.createElement("li");
+      item.appendChild(row);
+      fragment.appendChild(item);
+    }
+
+    elements.libraryList.replaceChildren(fragment);
+  }
+
+  async function refreshLibrary(): Promise<void> {
+    const response = await sendMessage(MessageType.GET_MEETING_LIBRARY, {
+      search: elements.librarySearchInput.value
+    });
+
+    if (response?.ok && response.library) {
+      renderLibraryList(response.library);
+      return;
+    }
+
+    setError(response?.error?.message || "Unable to load meeting library.");
+  }
+
+  function renderLibraryAi(session: TranscriptSession): void {
+    const artifacts = session.aiArtifacts;
+    elements.libraryAiMeta.textContent = artifacts
+      ? `Generated ${formatLocalDateTime(artifacts.generatedAt)}`
+      : "Not generated";
+
+    if (!artifacts) {
+      elements.libraryAiContent.textContent = "No AI notes generated for this meeting.";
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    const summaryHeading = document.createElement("h4");
+    summaryHeading.textContent = "Summary";
+    const summary = document.createElement("p");
+    summary.textContent = artifacts.executiveSummary || "No executive summary generated.";
+    fragment.append(summaryHeading, summary);
+
+    const actionsHeading = document.createElement("h4");
+    actionsHeading.textContent = "Action items";
+    const actions = document.createElement("ol");
+    const actionItems = artifacts.actionItems.length > 0 ? artifacts.actionItems : [{
+      task: "No action items identified.",
+      owner: null,
+      dueDate: null,
+      priority: "unknown" as AiActionPriority,
+      status: "open"
+    }];
+    for (const item of actionItems) {
+      const row = document.createElement("li");
+      row.textContent = item.task;
+      actions.appendChild(row);
+    }
+    fragment.append(actionsHeading, actions);
+
+    const decisionsHeading = document.createElement("h4");
+    decisionsHeading.textContent = "Decisions";
+    const decisions = document.createElement("ul");
+    const decisionItems = artifacts.minutesOfMeeting.decisions.length > 0
+      ? artifacts.minutesOfMeeting.decisions
+      : ["No decisions identified."];
+    for (const decision of decisionItems) {
+      const row = document.createElement("li");
+      row.textContent = decision;
+      decisions.appendChild(row);
+    }
+    fragment.append(decisionsHeading, decisions);
+    elements.libraryAiContent.replaceChildren(fragment);
+  }
+
+  function renderLibraryDetail(record: MeetingRecord): void {
+    selectedLibraryRecord = record;
+    const session = record.session;
+    elements.libraryDetail.hidden = false;
+    elements.libraryDetailTitle.textContent = libraryTitle(session);
+    elements.libraryDetailMeta.textContent = [
+      session.startedAt ? formatLocalDateTime(session.startedAt) : "Not started",
+      statusLabel(session.status),
+      session.meetingCode || "No code"
+    ].join(" | ");
+    elements.libraryDetailLineCount.textContent = formatLineCount(session.lines.length);
+    elements.copyLibraryTranscriptButton.disabled = session.lines.length === 0;
+    elements.saveLibraryTranscriptButton.disabled = session.lines.length === 0;
+    elements.copyLibraryAiNotesButton.disabled = !session.aiArtifacts;
+    elements.saveLibraryAiNotesButton.disabled = !session.aiArtifacts;
+    renderTranscriptLines(
+      elements.libraryTranscriptList,
+      session.lines,
+      "No transcript",
+      "This meeting does not have transcript lines."
+    );
+    renderLibraryAi(session);
+    if (currentLibrary) {
+      renderLibraryList(currentLibrary);
+    }
+  }
+
+  async function openLibraryRecord(sessionId: string): Promise<void> {
+    const response = await sendMessage(MessageType.GET_MEETING_RECORD, { sessionId });
+    if (response?.ok && response.record) {
+      renderLibraryDetail(response.record);
+      return;
+    }
+
+    setError(response?.error?.message || "Unable to open meeting.");
+  }
+
+  async function copyLibraryTranscript(): Promise<void> {
+    if (!selectedLibraryRecord?.session.lines.length) {
+      setError("No transcript lines to copy for this meeting.");
+      return;
+    }
+
+    try {
+      await writeClipboardText(formatTranscriptAsTxt(selectedLibraryRecord.session));
+      setError("Copied transcript");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Copy failed.");
+    }
+  }
+
+  async function copyLibraryAiNotes(): Promise<void> {
+    if (!selectedLibraryRecord?.session.aiArtifacts) {
+      setError("No AI notes to copy for this meeting.");
+      return;
+    }
+
+    try {
+      await writeClipboardText(formatMeetingArtifactsAsMarkdown(selectedLibraryRecord.session));
+      setError("Copied AI meeting notes");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Copy failed.");
+    }
+  }
+
+  async function saveArchivedFile(type: string): Promise<void> {
+    if (!selectedLibraryRecord) {
+      setError("Open a meeting before exporting.");
+      return;
+    }
+
+    const response = await sendMessage(type, { sessionId: selectedLibraryRecord.sessionId });
+    if (response?.ok && response.filename && typeof response.text === "string") {
+      await downloadTranscript(response.text, response.filename);
+      return;
+    }
+
+    setError(response?.error?.message || "Export failed.");
+  }
+
+  async function restoreLibraryRecord(): Promise<void> {
+    if (!selectedLibraryRecord) {
+      setError("Open a meeting before restoring.");
+      return;
+    }
+
+    const response = await sendMessage(MessageType.RESTORE_MEETING_RECORD, {
+      tabId: currentState?.tabId,
+      sessionId: selectedLibraryRecord.sessionId
+    });
+    if (response?.ok && response.state) {
+      render(response.state);
+      setView("live");
+      return;
+    }
+
+    setError(response?.error?.message || "Restore failed.");
+  }
+
+  async function deleteLibraryRecord(): Promise<void> {
+    if (!selectedLibraryRecord) {
+      setError("Open a meeting before deleting.");
+      return;
+    }
+
+    const confirmed = confirm("Delete this meeting from the local library?");
+    if (!confirmed) {
+      return;
+    }
+
+    const response = await sendMessage(MessageType.DELETE_MEETING_RECORD, {
+      tabId: currentState?.tabId,
+      sessionId: selectedLibraryRecord.sessionId
+    });
+    if (response?.ok) {
+      selectedLibraryRecord = null;
+      elements.libraryDetail.hidden = true;
+      if (response.state) {
+        render(response.state);
+      }
+      if (response.library) {
+        renderLibraryList(response.library);
+      } else {
+        await refreshLibrary();
+      }
+      return;
+    }
+
+    setError(response?.error?.message || "Delete failed.");
+  }
+
+  async function refreshBackgroundFileAutosaveState(status?: FileAutosaveStatus): Promise<void> {
+    if (!currentState?.tabId) {
+      return;
+    }
+
+    const response = await sendMessage(MessageType.LINK_TRANSCRIPT_FILE_AUTOSAVE, { tabId: currentState.tabId, status });
+    if (response?.ok && response.state) {
+      render(response.state);
+    }
+  }
+
+  async function linkOrManageFileAutosave(): Promise<void> {
+    if (!currentState?.session.sessionId || !currentState.tabId) {
+      setError("Start recording before linking an autosave file.");
+      return;
+    }
+
+    if (!currentState.fileAutosave.supported || !isFilePickerSupported()) {
+      setError("File autosave is not supported in this browser.");
+      return;
+    }
+
+    const linkedStatus = currentState.fileAutosave.status;
+    const shouldReplace = linkedStatus === "error";
+    const existingLink = await getLinkedTranscriptFile(currentState.session.sessionId);
+
+    if (existingLink && linkedStatus !== "paused" && !shouldReplace) {
+      const confirmed = confirm("Unlink transcript file autosave for this meeting?");
+      if (!confirmed) {
+        return;
+      }
+
+      const response = await sendMessage(MessageType.UNLINK_TRANSCRIPT_FILE_AUTOSAVE, { tabId: currentState.tabId });
+      if (response?.ok && response.state) {
+        render(response.state);
+        setError("Unlinked transcript file autosave");
+        return;
+      }
+      setError(response?.error?.message || "Unable to unlink autosave file.");
+      return;
+    }
+
+    try {
+      let linkedFile = existingLink;
+      if (!linkedFile || shouldReplace) {
+        const picked = await pickTranscriptFileHandle(currentState.session);
+        linkedFile = await createLinkedTranscriptFile(
+          currentState.session.sessionId,
+          picked.fileName,
+          picked.handle
+        );
+      }
+
+      const result = await writeLinkedTranscriptFile(currentState.session, linkedFile, { requestPermission: true });
+      setError(result.error || `Linked ${result.linkedFile.fileName}`);
+      await refreshBackgroundFileAutosaveState(result.status);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      setError(error instanceof Error ? error.message : "Unable to link autosave file.");
+    }
+  }
+
+  async function flushCurrentFileAutosave(): Promise<void> {
+    if (!currentState?.session.sessionId) {
+      setError("Start recording before flushing file autosave.");
+      return;
+    }
+
+    try {
+      const linkedFile = await getLinkedTranscriptFile(currentState.session.sessionId);
+      if (!linkedFile) {
+        setError("Link a transcript file before flushing autosave.");
+        return;
+      }
+
+      const result = await writeLinkedTranscriptFile(currentState.session, linkedFile, { requestPermission: true });
+      setError(result.error || `Updated ${result.linkedFile.fileName}`);
+      await refreshBackgroundFileAutosaveState(result.status);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to flush file autosave.");
+    }
+  }
+
   function render(state: TabRuntimeState): void {
     currentState = state;
     const session = state.session;
@@ -758,7 +1218,7 @@ namespace LMCL {
       ? `Last captured: ${formatClockTime(session.lastCapturedAt)}`
       : "Last captured: Never";
 
-    buttonState(session.status, state.supported, hasLines);
+    buttonState(session.status, state.supported, hasLines, state);
     renderCaptionStatus(state);
     renderTranscript(session.lines);
     renderAiSection(state);
@@ -796,11 +1256,38 @@ namespace LMCL {
   elements.resumeButton.addEventListener("click", () => void runCommand(MessageType.RESUME_RECORDING));
   elements.stopButton.addEventListener("click", () => void runCommand(MessageType.STOP_RECORDING));
   elements.saveButton.addEventListener("click", () => void runCommand(MessageType.SAVE_TXT));
+  elements.fileAutosaveButton.addEventListener("click", () => void linkOrManageFileAutosave());
+  elements.fileAutosaveFlushButton.addEventListener("click", () => void flushCurrentFileAutosave());
   elements.copyButton.addEventListener("click", () => void copyTranscript());
   elements.generateAiNotesButton.addEventListener("click", () => void runCommand(MessageType.GENERATE_MEETING_ARTIFACTS));
   elements.copyAiNotesButton.addEventListener("click", () => void copyAiNotes());
   elements.saveAiNotesButton.addEventListener("click", () => void runCommand(MessageType.SAVE_AI_NOTES_MD));
   elements.themeToggle.addEventListener("click", toggleTheme);
+  elements.liveViewButton.addEventListener("click", () => setView("live"));
+  elements.libraryViewButton.addEventListener("click", () => setView("library"));
+  elements.refreshLibraryButton.addEventListener("click", () => void refreshLibrary());
+  elements.closeLibraryDetailButton.addEventListener("click", () => {
+    selectedLibraryRecord = null;
+    elements.libraryDetail.hidden = true;
+    if (currentLibrary) {
+      renderLibraryList(currentLibrary);
+    }
+  });
+  elements.restoreLibraryButton.addEventListener("click", () => void restoreLibraryRecord());
+  elements.copyLibraryTranscriptButton.addEventListener("click", () => void copyLibraryTranscript());
+  elements.saveLibraryTranscriptButton.addEventListener("click", () => void saveArchivedFile(MessageType.SAVE_ARCHIVED_TXT));
+  elements.copyLibraryAiNotesButton.addEventListener("click", () => void copyLibraryAiNotes());
+  elements.saveLibraryAiNotesButton.addEventListener("click", () => void saveArchivedFile(MessageType.SAVE_ARCHIVED_AI_NOTES_MD));
+  elements.deleteLibraryMeetingButton.addEventListener("click", () => void deleteLibraryRecord());
+  elements.librarySearchInput.addEventListener("input", () => {
+    if (librarySearchTimer !== undefined) {
+      window.clearTimeout(librarySearchTimer);
+    }
+    librarySearchTimer = window.setTimeout(() => {
+      librarySearchTimer = undefined;
+      void refreshLibrary();
+    }, 180);
+  });
 
   elements.aiTabSummary.addEventListener("click", () => setAiTab("summary"));
   elements.aiTabActions.addEventListener("click", () => setAiTab("actions"));

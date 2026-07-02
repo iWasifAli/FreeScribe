@@ -61,6 +61,68 @@ namespace LMCL {
     aiArtifacts: AiMeetingArtifacts | null;
   }
 
+  export type FileAutosaveStatus = "unsupported" | "unlinked" | "dirty" | "saving" | "saved" | "paused" | "error";
+  export type FileAutosavePermissionState = PermissionState | "unknown";
+
+  export interface FileAutosaveRuntimeState {
+    supported: boolean;
+    status: FileAutosaveStatus;
+    fileName: string | null;
+    linkedAt: number | null;
+    lastSavedAt: number | null;
+    permission: FileAutosavePermissionState;
+    error: string | null;
+  }
+
+  export interface MeetingRecord {
+    sessionId: string;
+    session: TranscriptSession;
+    createdAt: number;
+    updatedAt: number;
+    archivedAt: number | null;
+    meetingKey: string | null;
+    searchText: string;
+  }
+
+  export interface MeetingSummary {
+    sessionId: string;
+    meetingTitle: string | null;
+    meetingUrl: string | null;
+    meetingCode: string | null;
+    status: RecordingStatus;
+    startedAt: number | null;
+    endedAt: number | null;
+    lastCapturedAt: number | null;
+    lineCount: number;
+    hasAiArtifacts: boolean;
+    updatedAt: number;
+    archivedAt: number | null;
+    fileAutosave: FileAutosaveRuntimeState | null;
+  }
+
+  export interface MeetingLibraryQuery {
+    search: string;
+    limit?: number;
+  }
+
+  export interface MeetingLibraryResult {
+    summaries: MeetingSummary[];
+    total: number;
+    query: MeetingLibraryQuery;
+  }
+
+  export interface LinkedTranscriptFile {
+    sessionId: string;
+    fileName: string;
+    handle: FileSystemFileHandle;
+    linkedAt: number;
+    lastWriteAt: number | null;
+    lastTranscriptUpdatedAt: number | null;
+    lastLineCount: number;
+    permission: FileAutosavePermissionState;
+    error: string | null;
+  }
+
   export interface TranscriptReducerOptions {
     updateWindowMs?: number;
     duplicateWindowMs?: number;
@@ -100,6 +162,7 @@ namespace LMCL {
     captions: CaptionDetectionState;
     autosaveStatus: AutosaveStatus;
     autosaveError: string | null;
+    fileAutosave: FileAutosaveRuntimeState;
     error: ExtensionError | null;
     ai: AiRuntimeState;
   }

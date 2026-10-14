@@ -13,7 +13,10 @@
     "src/shared/transcriptReducer.ts",
     "src/shared/exportTranscript.ts",
     "src/shared/aiArtifacts.ts",
+    "src/shared/meetingLibrary.ts",
     "src/shared/storage.ts",
+    "src/shared/meetingStore.ts",
+    "src/shared/fileAutosave.ts",
     "src/content/meetCaptionExtractor.ts"
   ]
 }

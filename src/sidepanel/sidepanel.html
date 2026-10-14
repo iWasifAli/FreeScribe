@@ -34,7 +34,18 @@
 
       <div class="header-divider" aria-hidden="true"></div>
 
-      <section class="hero-action" aria-label="Meet launcher">
+      <nav class="view-switch" aria-label="FreeScribe views">
+        <button id="liveViewButton" type="button" class="view-tab active" aria-pressed="true">
+          <i class="fa-solid fa-wave-square fa-icon" aria-hidden="true"></i>
+          <span>Live</span>
+        </button>
+        <button id="libraryViewButton" type="button" class="view-tab" aria-pressed="false">
+          <i class="fa-regular fa-folder-open fa-icon" aria-hidden="true"></i>
+          <span>Library</span>
+        </button>
+      </nav>
+
+      <section class="hero-action" aria-label="Meet launcher" data-live-view>
         <button id="startButton" type="button" class="primary start-action">
           <span class="button-icon" aria-hidden="true">
             <i class="fa-solid fa-video fa-icon"></i>
@@ -43,7 +54,7 @@
         </button>
       </section>
 
-      <section class="controls control-card" aria-label="Recording controls">
+      <section class="controls control-card" aria-label="Recording controls" data-live-view>
         <button id="pauseButton" type="button" class="pause-action">
           <span class="button-icon" aria-hidden="true">
             <i class="fa-solid fa-pause fa-icon"></i>
@@ -74,9 +85,18 @@
           </span>
           <span class="button-label">Save transcript</span>
         </button>
+        <button id="fileAutosaveButton" type="button" class="file-autosave-action">
+          <span class="button-icon" aria-hidden="true">
+            <i class="fa-regular fa-file-lines fa-icon"></i>
+          </span>
+          <span class="button-label">Link autosave file</span>
+        </button>
+        <button id="fileAutosaveFlushButton" type="button" class="icon-button" aria-label="Flush file autosave" title="Flush file autosave" disabled>
+          <i class="fa-solid fa-rotate fa-icon" aria-hidden="true"></i>
+        </button>
       </section>
 
-      <section class="signal-row" aria-live="polite">
+      <section class="signal-row" aria-live="polite" data-live-view>
         <div>
           <span class="meta-label">Caption status</span>
           <strong id="captionStatus" class="caption-status-value">Waiting for captions</strong>
@@ -88,7 +108,7 @@
         </label>
       </section>
 
-      <section class="latest-section" aria-label="Latest caption candidate">
+      <section class="latest-section" aria-label="Latest caption candidate" data-live-view>
         <div class="latest-orb" aria-hidden="true">
           <i class="fa-solid fa-wand-magic-sparkles fa-icon"></i>
         </div>
@@ -99,7 +119,7 @@
         <i class="fa-solid fa-chevron-right chevron-icon" aria-hidden="true"></i>
       </section>
 
-      <section class="transcript-section" aria-label="Transcript">
+      <section class="transcript-section" aria-label="Transcript" data-live-view>
         <div class="transcript-header">
           <h2>Transcript</h2>
           <div class="transcript-actions">
@@ -112,7 +132,7 @@
         <ol id="transcriptList" class="transcript-list"></ol>
       </section>
 
-      <section id="aiSection" class="ai-section" aria-label="AI meeting notes">
+      <section id="aiSection" class="ai-section" aria-label="AI meeting notes" data-live-view>
         <div class="ai-header">
           <div class="ai-title-row">
             <span class="ai-title-icon" aria-hidden="true">
@@ -175,7 +195,72 @@
         </div>
       </section>
 
-      <section class="meta-grid is-hidden" aria-label="Meeting metadata" hidden>
+      <section id="libraryView" class="library-section" aria-label="Meeting library" hidden>
+        <div class="library-header">
+          <h2>Meeting library</h2>
+          <button id="refreshLibraryButton" type="button" class="icon-button" aria-label="Refresh meeting library" title="Refresh meeting library">
+            <i class="fa-solid fa-rotate-right fa-icon" aria-hidden="true"></i>
+          </button>
+        </div>
+        <div class="library-search-row">
+          <i class="fa-solid fa-magnifying-glass fa-icon" aria-hidden="true"></i>
+          <input id="librarySearchInput" type="search" aria-label="Search meetings" placeholder="Search meetings" autocomplete="off">
+        </div>
+        <ol id="libraryList" class="library-list"></ol>
+        <article id="libraryDetail" class="library-detail" hidden>
+          <div class="library-detail-header">
+            <button id="closeLibraryDetailButton" type="button" class="icon-button" aria-label="Close meeting detail" title="Close meeting detail">
+              <i class="fa-solid fa-arrow-left fa-icon" aria-hidden="true"></i>
+            </button>
+            <div class="library-detail-title">
+              <h3 id="libraryDetailTitle">Meeting</h3>
+              <p id="libraryDetailMeta">No meeting selected</p>
+            </div>
+          </div>
+          <div class="library-detail-actions">
+            <button id="restoreLibraryButton" type="button" class="secondary-primary">
+              <span class="button-icon" aria-hidden="true"><i class="fa-solid fa-arrow-rotate-left fa-icon"></i></span>
+              <span class="button-label">Restore</span>
+            </button>
+            <button id="copyLibraryTranscriptButton" type="button">
+              <span class="button-icon" aria-hidden="true"><i class="fa-regular fa-copy fa-icon"></i></span>
+              <span class="button-label">Copy transcript</span>
+            </button>
+            <button id="saveLibraryTranscriptButton" type="button">
+              <span class="button-icon" aria-hidden="true"><i class="fa-solid fa-download fa-icon"></i></span>
+              <span class="button-label">Save transcript</span>
+            </button>
+            <button id="copyLibraryAiNotesButton" type="button">
+              <span class="button-icon" aria-hidden="true"><i class="fa-regular fa-copy fa-icon"></i></span>
+              <span class="button-label">Copy notes</span>
+            </button>
+            <button id="saveLibraryAiNotesButton" type="button">
+              <span class="button-icon" aria-hidden="true"><i class="fa-solid fa-download fa-icon"></i></span>
+              <span class="button-label">Save notes</span>
+            </button>
+            <button id="deleteLibraryMeetingButton" type="button" class="danger-ghost">
+              <span class="button-icon" aria-hidden="true"><i class="fa-regular fa-trash-can fa-icon"></i></span>
+              <span class="button-label">Delete</span>
+            </button>
+          </div>
+          <div class="library-detail-section">
+            <div class="transcript-header compact">
+              <h3>Transcript</h3>
+              <span id="libraryDetailLineCount">0 lines</span>
+            </div>
+            <ol id="libraryTranscriptList" class="transcript-list library-transcript-list"></ol>
+          </div>
+          <div class="library-detail-section">
+            <div class="transcript-header compact">
+              <h3>AI notes</h3>
+              <span id="libraryAiMeta">Not generated</span>
+            </div>
+            <div id="libraryAiContent" class="library-ai-content"></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="meta-grid is-hidden" aria-label="Meeting metadata" hidden data-live-view>
         <div class="meta-item">
           <span class="meta-label">Meeting</span>
           <span id="meetingTitle" class="meta-value">Unknown</span>

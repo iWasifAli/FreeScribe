@@ -17,6 +17,8 @@ namespace LMCL {
   const runtimeErrorByTabId: Record<string, ExtensionError | null> = {};
   const contentScriptAvailableByTabId: Record<string, boolean> = {};
   const aiGenerationByTabId: Record<string, boolean> = {};
+  const fileAutosaveStateBySessionId: Record<string, FileAutosaveRuntimeState> = {};
+  const fileAutosaveTimerBySessionId: Record<string, ReturnType<typeof setTimeout>> = {};
 
   let storageLoaded = false;
   let storageLoadPromise: Promise<void> | null = null;
@@ -80,20 +82,7 @@ namespace LMCL {
   }
 
   function meetingKeyFromParts(meetingUrl: string | null | undefined, meetingCode: string | null | undefined): string | null {
-    if (meetingCode) {
-      return `code:${meetingCode}`;
-    }
-
-    if (isMeetUrl(meetingUrl)) {
-      try {
-        const parsedUrl = new URL(meetingUrl || "");
-        return `url:${parsedUrl.origin}${parsedUrl.pathname}`;
-      } catch {
-        return `url:${meetingUrl}`;
-      }
-    }
-
-    return null;
+    return createMeetingKey(meetingUrl, meetingCode);
   }
 
   function meetingKeyFromSession(session: TranscriptSession): string | null {
@@ -106,6 +95,51 @@ namespace LMCL {
 
   function isMeaningfulSession(session: TranscriptSession): boolean {
     return Boolean(session.sessionId || session.startedAt || session.lines.length > 0 || session.status !== "IDLE");
+  }
+
+  function isFileAutosaveSupportedInBackground(): boolean {
+    return isMeetingStoreSupported();
+  }
+
+  function isRecoverableFileAutosaveState(status: FileAutosaveStatus): boolean {
+    return status === "saved" || status === "dirty";
+  }
+
+  function getFileAutosaveState(session: TranscriptSession): FileAutosaveRuntimeState {
+    if (!session.sessionId) {
+      return createEmptyFileAutosaveRuntimeState(isFileAutosaveSupportedInBackground());
+    }
+
+    return fileAutosaveStateBySessionId[session.sessionId]
+      ?? createEmptyFileAutosaveRuntimeState(isFileAutosaveSupportedInBackground());
+  }
+
+  async function refreshFileAutosaveState(
+    session: TranscriptSession,
+    statusOverride?: FileAutosaveStatus
+  ): Promise<FileAutosaveRuntimeState> {
+    if (!session.sessionId) {
+      return createEmptyFileAutosaveRuntimeState(isFileAutosaveSupportedInBackground());
+    }
+
+    try {
+      const linkedFile = await getLinkedTranscriptFile(session.sessionId);
+      const state = fileAutosaveRuntimeFromLink(linkedFile, isFileAutosaveSupportedInBackground(), statusOverride);
+      fileAutosaveStateBySessionId[session.sessionId] = state;
+      return state;
+    } catch (error) {
+      const state: FileAutosaveRuntimeState = {
+        supported: false,
+        status: "error",
+        fileName: null,
+        linkedAt: null,
+        lastSavedAt: null,
+        permission: "unknown",
+        error: error instanceof Error ? error.message : "Unable to read linked transcript file state."
+      };
+      fileAutosaveStateBySessionId[session.sessionId] = state;
+      return state;
+    }
   }
 
   function createSessionId(): string {
@@ -134,6 +168,49 @@ namespace LMCL {
     }
   }
 
+  function removeSessionFromMeetingKeyCache(sessionId: string): void {
+    for (const [meetingKey, session] of Object.entries(sessionsByMeetingKey)) {
+      if (session.sessionId === sessionId) {
+        delete sessionsByMeetingKey[meetingKey];
+      }
+    }
+  }
+
+  function clearSessionFromTabCaches(sessionId: string): number[] {
+    const clearedTabIds: number[] = [];
+    for (const [key, session] of Object.entries(sessionsByTabId)) {
+      if (session.sessionId !== sessionId) {
+        continue;
+      }
+
+      delete sessionsByTabId[key];
+      delete captionsByTabId[key];
+      delete autosaveStatusByTabId[key];
+      delete autosaveErrorByTabId[key];
+      delete runtimeErrorByTabId[key];
+      delete contentScriptAvailableByTabId[key];
+
+      const tabId = Number(key);
+      if (Number.isFinite(tabId)) {
+        clearedTabIds.push(tabId);
+      }
+    }
+
+    return clearedTabIds;
+  }
+
+  function isFileAutosaveStatus(value: unknown): value is FileAutosaveStatus {
+    return (
+      value === "unsupported" ||
+      value === "unlinked" ||
+      value === "dirty" ||
+      value === "saving" ||
+      value === "saved" ||
+      value === "paused" ||
+      value === "error"
+    );
+  }
+
   function getCaptionState(tabId: number | null | undefined): CaptionDetectionState {
     const key = tabKey(tabId);
     if (!captionsByTabId[key]) {
@@ -153,7 +230,15 @@ namespace LMCL {
     }
 
     if (!storageLoadPromise) {
-      storageLoadPromise = loadStoredState().then((stored) => {
+      storageLoadPromise = loadStoredState().then(async (stored) => {
+        try {
+          if (isMeetingStoreSupported()) {
+            await migrateStoredStateToMeetingStore(stored);
+          }
+        } catch (error) {
+          console.warn("[FreeScribe] Meeting library migration failed", error);
+        }
+
         Object.assign(sessionsByTabId, stored.sessionsByTabId);
         Object.assign(sessionsByMeetingKey, stored.sessionsByMeetingKey);
 
@@ -161,6 +246,14 @@ namespace LMCL {
           const meetingKey = meetingKeyFromSession(session);
           if (meetingKey && isMeaningfulSession(session) && !sessionsByMeetingKey[meetingKey]) {
             sessionsByMeetingKey[meetingKey] = cloneSession(session);
+          }
+          if (isMeaningfulSession(session)) {
+            try {
+              await saveMeetingSession(session);
+              await refreshFileAutosaveState(session);
+            } catch (error) {
+              console.warn("[FreeScribe] Meeting library hydration failed", error);
+            }
           }
         }
 
@@ -186,8 +279,23 @@ namespace LMCL {
       autosaveErrorByTabId[key] = null;
     }
 
+    let libraryError: string | null = null;
+    for (const session of Object.values(sessionsByTabId)) {
+      if (isMeaningfulSession(session)) {
+        try {
+          await saveMeetingSession(session);
+          await refreshFileAutosaveState(session);
+        } catch (error) {
+          libraryError = error instanceof Error ? error.message : "Meeting library autosave failed.";
+        }
+      }
+    }
+
     try {
       await saveStoredState(sessionsByTabId, sessionsByMeetingKey);
+      if (libraryError) {
+        throw new Error(libraryError);
+      }
       for (const key of Object.keys(sessionsByTabId)) {
         autosaveStatusByTabId[key] = "saved";
         autosaveErrorByTabId[key] = null;
@@ -211,6 +319,110 @@ namespace LMCL {
 
     autosaveTimer = setTimeout(() => {
       void flushAutosave().then(() => broadcastTabState(tabId));
+    }, AUTOSAVE_DEBOUNCE_MS);
+  }
+
+  async function flushLinkedFileAutosaveForSession(
+    tabId: number,
+    session: TranscriptSession,
+    force = false
+  ): Promise<void> {
+    if (!session.sessionId) {
+      return;
+    }
+
+    if (fileAutosaveTimerBySessionId[session.sessionId]) {
+      clearTimeout(fileAutosaveTimerBySessionId[session.sessionId]);
+      delete fileAutosaveTimerBySessionId[session.sessionId];
+    }
+
+    let linkedFile: LinkedTranscriptFile | null = null;
+    try {
+      linkedFile = await getLinkedTranscriptFile(session.sessionId);
+    } catch (error) {
+      fileAutosaveStateBySessionId[session.sessionId] = {
+        supported: false,
+        status: "error",
+        fileName: null,
+        linkedAt: null,
+        lastSavedAt: null,
+        permission: "unknown",
+        error: error instanceof Error ? error.message : "Unable to read linked transcript file."
+      };
+      await broadcastTabState(tabId);
+      return;
+    }
+
+    if (!linkedFile) {
+      fileAutosaveStateBySessionId[session.sessionId] = createEmptyFileAutosaveRuntimeState(isFileAutosaveSupportedInBackground());
+      await broadcastTabState(tabId);
+      return;
+    }
+
+    const now = Date.now();
+    const currentState = fileAutosaveRuntimeFromLink(linkedFile, isFileAutosaveSupportedInBackground());
+    if (currentState.status === "paused" || currentState.status === "error") {
+      fileAutosaveStateBySessionId[session.sessionId] = currentState;
+      await broadcastTabState(tabId);
+      return;
+    }
+
+    if (!shouldFlushLinkedTranscriptFile(session, linkedFile, { now, force })) {
+      if (!hasLinkedTranscriptChanged(session, linkedFile)) {
+        fileAutosaveStateBySessionId[session.sessionId] = currentState;
+        await broadcastTabState(tabId);
+        return;
+      }
+
+      fileAutosaveStateBySessionId[session.sessionId] = {
+        ...currentState,
+        status: "dirty"
+      };
+      const delay = Math.max(500, FILE_AUTOSAVE_INTERVAL_MS - (now - (linkedFile.lastWriteAt ?? now)));
+      fileAutosaveTimerBySessionId[session.sessionId] = setTimeout(() => {
+        void flushLinkedFileAutosaveForSession(tabId, getSession(tabId), false);
+      }, delay);
+      await broadcastTabState(tabId);
+      return;
+    }
+
+    fileAutosaveStateBySessionId[session.sessionId] = fileAutosaveRuntimeFromLink(
+      linkedFile,
+      isFileAutosaveSupportedInBackground(),
+      "saving"
+    );
+    await broadcastTabState(tabId);
+
+    const result = await writeLinkedTranscriptFile(session, linkedFile, { now, requestPermission: false });
+    fileAutosaveStateBySessionId[session.sessionId] = fileAutosaveRuntimeFromLink(
+      result.linkedFile,
+      isFileAutosaveSupportedInBackground(),
+      result.status
+    );
+    await broadcastTabState(tabId);
+  }
+
+  function scheduleLinkedFileAutosave(tabId: number, session: TranscriptSession): void {
+    if (!session.sessionId) {
+      return;
+    }
+
+    const existingState = getFileAutosaveState(session);
+    if (!isRecoverableFileAutosaveState(existingState.status)) {
+      return;
+    }
+
+    fileAutosaveStateBySessionId[session.sessionId] = {
+      ...existingState,
+      status: "dirty"
+    };
+
+    if (fileAutosaveTimerBySessionId[session.sessionId]) {
+      clearTimeout(fileAutosaveTimerBySessionId[session.sessionId]);
+    }
+
+    fileAutosaveTimerBySessionId[session.sessionId] = setTimeout(() => {
+      void flushLinkedFileAutosaveForSession(tabId, getSession(tabId), false);
     }, AUTOSAVE_DEBOUNCE_MS);
   }
 
@@ -277,6 +489,7 @@ namespace LMCL {
       captions: { ...getCaptionState(tabId) },
       autosaveStatus: autosaveStatusByTabId[key] ?? "saved",
       autosaveError: autosaveErrorByTabId[key] ?? null,
+      fileAutosave: getFileAutosaveState(getSession(tabId)),
       error: runtimeErrorByTabId[key] ?? null,
       ai: getAiRuntimeState(tabId)
     };
@@ -366,6 +579,9 @@ namespace LMCL {
     if (existingSession.status === "RECORDING" || existingSession.status === "PAUSED") {
       return errorResponse("SESSION_ACTIVE", "Stop the current recording before starting a new session.");
     }
+    if (isMeaningfulSession(existingSession)) {
+      await saveMeetingSession(existingSession);
+    }
 
     const tabMetadata = metadataFromTab(tab);
     const contentMetadata = await startContentCapture(tabId);
@@ -444,13 +660,21 @@ namespace LMCL {
 
     setSession(tabId, nextSession);
     await flushAutosave();
+    if (status === "PAUSED" || status === "STOPPED") {
+      await flushLinkedFileAutosaveForSession(tabId, nextSession, true);
+    }
     await broadcastTabState(tabId);
     return { ok: true, state: buildTabState(tab, tabId) };
   }
 
   async function clearSession(tabId: number): Promise<TabRuntimeState> {
     const tab = await getTab(tabId);
-    const previousMeetingKey = meetingKeyFromSession(getSession(tabId));
+    const previousSession = getSession(tabId);
+    const previousMeetingKey = meetingKeyFromSession(previousSession);
+    if (isMeaningfulSession(previousSession)) {
+      await saveMeetingSession(previousSession);
+      await flushLinkedFileAutosaveForSession(tabId, previousSession, true);
+    }
     await stopContentCapture(tabId);
     setSession(tabId, createEmptySession());
     captionsByTabId[tabKey(tabId)] = {
@@ -656,6 +880,190 @@ namespace LMCL {
     };
   }
 
+  async function listMeetingLibrary(search: string): Promise<MeetingLibraryResult> {
+    const records = await getAllMeetingRecords();
+    const result = queryMeetingRecords(records, { search, limit: DEFAULT_MEETING_LIBRARY_LIMIT });
+    const summaries = await Promise.all(result.summaries.map(async (summary) => {
+      const linkedFile = await getLinkedTranscriptFile(summary.sessionId);
+      return {
+        ...summary,
+        fileAutosave: fileAutosaveRuntimeFromLink(linkedFile, isFileAutosaveSupportedInBackground())
+      };
+    }));
+
+    return {
+      ...result,
+      summaries
+    };
+  }
+
+  async function getArchivedMeetingRecord(
+    sessionId: string
+  ): Promise<{ ok: true; record: MeetingRecord; fileAutosave: FileAutosaveRuntimeState } | { ok: false; error: ExtensionError }> {
+    const record = await getMeetingRecord(sessionId);
+    if (!record) {
+      return errorResponse("MEETING_NOT_FOUND", "Meeting not found in the local library.");
+    }
+
+    const linkedFile = await getLinkedTranscriptFile(sessionId);
+    return {
+      ok: true,
+      record,
+      fileAutosave: fileAutosaveRuntimeFromLink(linkedFile, isFileAutosaveSupportedInBackground())
+    };
+  }
+
+  async function prepareArchivedTxtExport(
+    sessionId: string
+  ): Promise<{ ok: true; filename: string; text: string } | { ok: false; error: ExtensionError }> {
+    const recordResult = await getArchivedMeetingRecord(sessionId);
+    if (!recordResult.ok) {
+      return recordResult;
+    }
+
+    if (recordResult.record.session.lines.length === 0) {
+      return errorResponse("EMPTY_TRANSCRIPT", "There are no transcript lines to save for this meeting.");
+    }
+
+    return {
+      ok: true,
+      filename: createTranscriptFilename(recordResult.record.session),
+      text: formatTranscriptAsTxt(recordResult.record.session)
+    };
+  }
+
+  async function prepareArchivedAiNotesExport(
+    sessionId: string
+  ): Promise<{ ok: true; filename: string; text: string } | { ok: false; error: ExtensionError }> {
+    const recordResult = await getArchivedMeetingRecord(sessionId);
+    if (!recordResult.ok) {
+      return recordResult;
+    }
+
+    if (!recordResult.record.session.aiArtifacts) {
+      return errorResponse("NO_AI_NOTES", "This meeting does not have generated AI notes.");
+    }
+
+    return {
+      ok: true,
+      filename: createMeetingArtifactsFilename(recordResult.record.session),
+      text: formatMeetingArtifactsAsMarkdown(recordResult.record.session)
+    };
+  }
+
+  async function deleteArchivedMeeting(
+    sessionId: string,
+    tabId: number | null
+  ): Promise<{ ok: true; library: MeetingLibraryResult; state: TabRuntimeState | null } | { ok: false; error: ExtensionError }> {
+    const record = await getMeetingRecord(sessionId);
+    if (!record) {
+      return errorResponse("MEETING_NOT_FOUND", "Meeting not found in the local library.");
+    }
+
+    await deleteMeetingRecord(sessionId);
+    removeSessionFromMeetingKeyCache(sessionId);
+    const clearedTabIds = clearSessionFromTabCaches(sessionId);
+    delete fileAutosaveStateBySessionId[sessionId];
+    if (fileAutosaveTimerBySessionId[sessionId]) {
+      clearTimeout(fileAutosaveTimerBySessionId[sessionId]);
+      delete fileAutosaveTimerBySessionId[sessionId];
+    }
+
+    let state: TabRuntimeState | null = null;
+    await flushAutosave();
+    for (const clearedTabId of clearedTabIds) {
+      await broadcastTabState(clearedTabId);
+    }
+
+    if (typeof tabId === "number" && clearedTabIds.includes(tabId)) {
+      const tab = await getTab(tabId);
+      state = buildTabState(tab, tabId);
+    }
+
+    return {
+      ok: true,
+      library: await listMeetingLibrary(""),
+      state
+    };
+  }
+
+  async function restoreArchivedMeeting(
+    sessionId: string,
+    tabId: number | null
+  ): Promise<{ ok: true; state: TabRuntimeState } | { ok: false; error: ExtensionError }> {
+    if (typeof tabId !== "number") {
+      return errorResponse("NO_ACTIVE_TAB", "Open a Google Meet tab before restoring a meeting.");
+    }
+
+    const tab = await getTab(tabId);
+    if (!isMeetUrl(tab?.url)) {
+      return errorResponse("UNSUPPORTED_TAB", "Open a Google Meet tab before restoring a meeting.");
+    }
+
+    const record = await getMeetingRecord(sessionId);
+    if (!record) {
+      return errorResponse("MEETING_NOT_FOUND", "Meeting not found in the local library.");
+    }
+
+    const restoredSession = cloneSession(record.session);
+    if (restoredSession.status === "RECORDING") {
+      restoredSession.status = "PAUSED";
+    }
+
+    setSession(tabId, restoredSession);
+    await refreshFileAutosaveState(restoredSession);
+    await flushAutosave();
+    await broadcastTabState(tabId);
+    return { ok: true, state: buildTabState(tab, tabId) };
+  }
+
+  async function markLinkedFileAutosave(
+    tabId: number,
+    statusOverride?: FileAutosaveStatus
+  ): Promise<{ ok: true; state: TabRuntimeState } | { ok: false; error: ExtensionError }> {
+    const tab = await getTab(tabId);
+    const session = getSession(tabId);
+    if (!session.sessionId) {
+      return errorResponse("NO_SESSION", "Start or restore a meeting before linking a transcript file.");
+    }
+
+    await refreshFileAutosaveState(session, statusOverride);
+    await broadcastTabState(tabId);
+    return { ok: true, state: buildTabState(tab, tabId) };
+  }
+
+  async function unlinkFileAutosave(
+    tabId: number
+  ): Promise<{ ok: true; state: TabRuntimeState } | { ok: false; error: ExtensionError }> {
+    const tab = await getTab(tabId);
+    const session = getSession(tabId);
+    if (!session.sessionId) {
+      return errorResponse("NO_SESSION", "No active meeting is linked to a transcript file.");
+    }
+
+    await deleteLinkedTranscriptFile(session.sessionId);
+    fileAutosaveStateBySessionId[session.sessionId] = createEmptyFileAutosaveRuntimeState(isFileAutosaveSupportedInBackground());
+    if (fileAutosaveTimerBySessionId[session.sessionId]) {
+      clearTimeout(fileAutosaveTimerBySessionId[session.sessionId]);
+      delete fileAutosaveTimerBySessionId[session.sessionId];
+    }
+    await broadcastTabState(tabId);
+    return { ok: true, state: buildTabState(tab, tabId) };
+  }
+
+  async function flushFileAutosaveCommand(
+    tabId: number
+  ): Promise<{ ok: true; state: TabRuntimeState } | { ok: false; error: ExtensionError }> {
+    const tab = await getTab(tabId);
+    const session = getSession(tabId);
+    if (!session.sessionId) {
+      return errorResponse("NO_SESSION", "Start or restore a meeting before flushing file autosave.");
+    }
+
+    await flushLinkedFileAutosaveForSession(tabId, session, true);
+    return { ok: true, state: buildTabState(tab, tabId) };
+  }
+
   function isContentScriptSender(sender: any): boolean {
     return typeof sender?.tab?.id === "number";
   }
@@ -684,6 +1092,7 @@ namespace LMCL {
     if (nextSession !== previousSession) {
       setSession(tabId, nextSession);
       scheduleAutosave(tabId);
+      scheduleLinkedFileAutosave(tabId, nextSession);
     }
 
     await broadcastTabState(tabId);
@@ -778,6 +1187,84 @@ namespace LMCL {
           return { ok: false, error: { code: "NO_ACTIVE_TAB", message: "No active tab found." } };
         }
         return prepareTxtExport(tabId);
+      }
+      case MessageType.GET_MEETING_LIBRARY: {
+        if (senderIsContentScript) {
+          return errorResponse("UNAUTHORIZED_SENDER", "This command is not available from a content script.");
+        }
+        const payload = message.payload as { search?: unknown } | undefined;
+        return { ok: true, library: await listMeetingLibrary(typeof payload?.search === "string" ? payload.search : "") };
+      }
+      case MessageType.GET_MEETING_RECORD: {
+        if (senderIsContentScript) {
+          return errorResponse("UNAUTHORIZED_SENDER", "This command is not available from a content script.");
+        }
+        const payload = message.payload as { sessionId?: unknown } | undefined;
+        const sessionId = typeof payload?.sessionId === "string" ? payload.sessionId : "";
+        return getArchivedMeetingRecord(sessionId);
+      }
+      case MessageType.DELETE_MEETING_RECORD: {
+        if (senderIsContentScript) {
+          return errorResponse("UNAUTHORIZED_SENDER", "This command is not available from a content script.");
+        }
+        const payload = message.payload as { sessionId?: unknown } | undefined;
+        const sessionId = typeof payload?.sessionId === "string" ? payload.sessionId : "";
+        return deleteArchivedMeeting(sessionId, uiTabId);
+      }
+      case MessageType.RESTORE_MEETING_RECORD: {
+        if (senderIsContentScript) {
+          return errorResponse("UNAUTHORIZED_SENDER", "This command is not available from a content script.");
+        }
+        const payload = message.payload as { sessionId?: unknown } | undefined;
+        const sessionId = typeof payload?.sessionId === "string" ? payload.sessionId : "";
+        return restoreArchivedMeeting(sessionId, uiTabId);
+      }
+      case MessageType.SAVE_ARCHIVED_TXT: {
+        if (senderIsContentScript) {
+          return errorResponse("UNAUTHORIZED_SENDER", "This command is not available from a content script.");
+        }
+        const payload = message.payload as { sessionId?: unknown } | undefined;
+        const sessionId = typeof payload?.sessionId === "string" ? payload.sessionId : "";
+        return prepareArchivedTxtExport(sessionId);
+      }
+      case MessageType.SAVE_ARCHIVED_AI_NOTES_MD: {
+        if (senderIsContentScript) {
+          return errorResponse("UNAUTHORIZED_SENDER", "This command is not available from a content script.");
+        }
+        const payload = message.payload as { sessionId?: unknown } | undefined;
+        const sessionId = typeof payload?.sessionId === "string" ? payload.sessionId : "";
+        return prepareArchivedAiNotesExport(sessionId);
+      }
+      case MessageType.LINK_TRANSCRIPT_FILE_AUTOSAVE: {
+        if (senderIsContentScript) {
+          return errorResponse("UNAUTHORIZED_SENDER", "This command is not available from a content script.");
+        }
+        const tabId = uiTabId;
+        if (typeof tabId !== "number") {
+          return { ok: false, error: { code: "NO_ACTIVE_TAB", message: "No active tab found." } };
+        }
+        const payload = message.payload as { status?: unknown } | undefined;
+        return markLinkedFileAutosave(tabId, isFileAutosaveStatus(payload?.status) ? payload.status : undefined);
+      }
+      case MessageType.UNLINK_TRANSCRIPT_FILE_AUTOSAVE: {
+        if (senderIsContentScript) {
+          return errorResponse("UNAUTHORIZED_SENDER", "This command is not available from a content script.");
+        }
+        const tabId = uiTabId;
+        if (typeof tabId !== "number") {
+          return { ok: false, error: { code: "NO_ACTIVE_TAB", message: "No active tab found." } };
+        }
+        return unlinkFileAutosave(tabId);
+      }
+      case MessageType.FLUSH_TRANSCRIPT_FILE_AUTOSAVE: {
+        if (senderIsContentScript) {
+          return errorResponse("UNAUTHORIZED_SENDER", "This command is not available from a content script.");
+        }
+        const tabId = uiTabId;
+        if (typeof tabId !== "number") {
+          return { ok: false, error: { code: "NO_ACTIVE_TAB", message: "No active tab found." } };
+        }
+        return flushFileAutosaveCommand(tabId);
       }
       case MessageType.GENERATE_MEETING_ARTIFACTS: {
         if (senderIsContentScript) {
@@ -881,12 +1368,20 @@ namespace LMCL {
   });
 
   chrome.tabs?.onRemoved?.addListener((tabId: number) => {
-    delete sessionsByTabId[tabKey(tabId)];
-    delete captionsByTabId[tabKey(tabId)];
-    delete autosaveStatusByTabId[tabKey(tabId)];
-    delete autosaveErrorByTabId[tabKey(tabId)];
-    delete runtimeErrorByTabId[tabKey(tabId)];
-    delete contentScriptAvailableByTabId[tabKey(tabId)];
-    void flushAutosave();
+    const removedSession = sessionsByTabId[tabKey(tabId)];
+    void (async () => {
+      if (removedSession && isMeaningfulSession(removedSession)) {
+        await saveMeetingSession(removedSession);
+        await flushLinkedFileAutosaveForSession(tabId, removedSession, true);
+      }
+
+      delete sessionsByTabId[tabKey(tabId)];
+      delete captionsByTabId[tabKey(tabId)];
+      delete autosaveStatusByTabId[tabKey(tabId)];
+      delete autosaveErrorByTabId[tabKey(tabId)];
+      delete runtimeErrorByTabId[tabKey(tabId)];
+      delete contentScriptAvailableByTabId[tabKey(tabId)];
+      await flushAutosave();
+    })();
   });
 }

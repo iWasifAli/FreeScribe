@@ -12,7 +12,10 @@
     "src/shared/slugify.ts",
     "src/shared/exportTranscript.ts",
     "src/shared/aiArtifacts.ts",
+    "src/shared/meetingLibrary.ts",
     "src/shared/messages.ts",
+    "src/shared/meetingStore.ts",
+    "src/shared/fileAutosave.ts",
     "src/sidepanel/sidepanel.ts"
   ]
 }
